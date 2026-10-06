@@ -1350,11 +1350,12 @@ extension StatusItemController {
 
         let isStale = self.store.isStale(provider: provider)
         let hasSatisfiedUsageFetch = self.store.hasSatisfiedUsageFetch(for: provider)
+        let isRefreshing = self.store.refreshingProviders.contains(provider.instanceID)
         // Provider-specific by design: Warp animates while its first remote refresh is still in flight.
-        if provider == .warp, !hasSatisfiedUsageFetch, self.store.refreshingProviders.contains(provider.instanceID) {
+        if provider == .warp, !hasSatisfiedUsageFetch, isRefreshing {
             return true
         }
-        return !hasSatisfiedUsageFetch && !isStale
+        return (!hasSatisfiedUsageFetch && !isStale && isRefreshing)
     }
 
     func updateAnimationState() {

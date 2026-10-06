@@ -61,6 +61,44 @@ struct StatusItemAnimationTests {
     }
 
     @Test
+    func `completed fetch with suppressed error does not loop animation indefinitely`() {
+        let settings = SettingsStore(
+            configStore: testConfigStore(suiteName: "StatusItemAnimationTests-suppressed-error"),
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+        settings.statusChecksEnabled = false
+        settings.refreshFrequency = .manual
+        settings.mergeIcons = false
+
+        let registry = ProviderRegistry.shared
+        if let claudeMeta = registry.metadata[.claude] {
+            settings.setProviderEnabled(provider: .claude, metadata: claudeMeta, enabled: true)
+        }
+
+        let fetcher = UsageFetcher()
+        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: self.makeStatusBarForTesting())
+        defer { controller.releaseStatusItemsForTesting() }
+
+        // Provider has no snapshot and no surfaced error, but is NOT in refreshingProviders
+        store._setSnapshotForTesting(nil, provider: .claude)
+        store._setErrorForTesting(nil, provider: .claude)
+        // With fetch attempts completed and not in-flight:
+        store._setKnownLimitsAvailabilityForTesting(.unavailable, provider: .claude)
+        #expect(!controller.shouldAnimate(provider: .claude))
+
+        // Even with known limits cleared, if not in-flight it should not animate
+        store._setKnownLimitsAvailabilityForTesting(nil, provider: .claude)
+        #expect(!controller.shouldAnimate(provider: .claude))
+    }
+
+    @Test
     func `merged icon loading animation tracks selected provider only`() {
         let settings = SettingsStore(
             configStore: testConfigStore(suiteName: "StatusItemAnimationTests-merged"),

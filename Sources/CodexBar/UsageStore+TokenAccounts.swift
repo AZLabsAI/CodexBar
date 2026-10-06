@@ -590,6 +590,14 @@ extension UsageStore {
                 fallbackSnapshot: selectedSnapshot,
                 fallbackAccountSnapshot: selectedAccountSnapshot,
                 generation: generation)
+        } else {
+            await self.applySelectedOutcome(
+                ProviderFetchOutcome(result: .failure(CancellationError()), attempts: []),
+                provider: provider,
+                account: selectedAccount,
+                fallbackSnapshot: selectedSnapshot,
+                fallbackAccountSnapshot: selectedAccountSnapshot,
+                generation: generation)
         }
 
         guard self.isCurrentProviderRefreshGeneration(provider, generation: generation) else { return }
@@ -733,7 +741,13 @@ extension UsageStore {
         { group in
             for request in requests {
                 group.addTask {
-                    let outcome = await descriptor.fetchOutcome(context: request.context)
+                    let fetchTask = Task { await descriptor.fetchOutcome(context: request.context) }
+                    let timeoutTask = Task {
+                        try? await Task.sleep(for: .seconds(20))
+                        fetchTask.cancel()
+                    }
+                    let outcome = await fetchTask.value
+                    timeoutTask.cancel()
                     return TokenAccountFetchResult(
                         index: request.index,
                         account: request.account,
@@ -809,7 +823,13 @@ extension UsageStore {
                             env: request.context.env,
                             fetcher: request.resetCreditsFetcher)
                     }
-                    let initialOutcome = await fetchOutcome()
+                    let initialTask = Task { await fetchOutcome() }
+                    let timeoutTask = Task {
+                        try? await Task.sleep(for: .seconds(20))
+                        initialTask.cancel()
+                    }
+                    let initialOutcome = await initialTask.value
+                    timeoutTask.cancel()
                     let admission: CodexWeeklyResetPublicationAdmission?
                     if Self.codexUsageOutcomeMatchesVisibleAccount(
                         initialOutcome,
@@ -1292,6 +1312,8 @@ extension UsageStore {
             self.invalidateGenericWidgetUsage(for: provider)
             self.snapshots.removeValue(forKey: provider.instanceID)
             self.clearProviderDerivedTokenSnapshot(for: provider)
+        } else if !shouldSurface, snapshot == nil {
+            self.knownLimitsAvailabilityByProvider[provider.instanceID] = .unavailable
         }
     }
 

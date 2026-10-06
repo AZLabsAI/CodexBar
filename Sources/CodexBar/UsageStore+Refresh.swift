@@ -1452,6 +1452,9 @@ extension UsageStore {
                     status: Self.refreshFailureHookStatus(error))
             } else {
                 self.errors[provider.instanceID] = nil
+                if self.snapshots[provider.instanceID] == nil {
+                    self.knownLimitsAvailabilityByProvider[provider.instanceID] = .unavailable
+                }
             }
             if shouldNotifyPermissionPrompt {
                 self.postPermissionPromptNotificationIfNeeded(provider: provider, error: error)

@@ -719,7 +719,8 @@ final class UsageStore {
 
     func hasSatisfiedUsageFetch(for provider: UsageProvider) -> Bool {
         self.snapshot(for: provider.instanceID) != nil ||
-            self.knownLimitsAvailability(for: provider)?.isUnavailable == true
+            self.knownLimitsAvailability(for: provider)?.isUnavailable == true ||
+            (!self.fetchAttempts(for: provider).isEmpty && self.errors[provider.instanceID] == nil && !self.refreshingProviders.contains(provider.instanceID))
     }
 
     func needsUsageRefreshRetry(for provider: UsageProvider) -> Bool {
