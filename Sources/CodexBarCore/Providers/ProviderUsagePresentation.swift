@@ -312,6 +312,7 @@ public struct ProviderMenuCardPresentation: Sendable {
     public let usesRawPrimaryResetDescription: Bool
     public let resetWindowUsesWeeklyPace: Bool
     public let blockingQuota: (windowID: String, message: String)?
+    public let placesExtraRateWindowsOnTop: Bool
 
     public init(
         usageNotesResolver: @escaping UsageNotesResolver = { _ in .unhandled },
@@ -337,7 +338,8 @@ public struct ProviderMenuCardPresentation: Sendable {
         usesSyntheticRollingRegen: Bool = false,
         usesRawPrimaryResetDescription: Bool = false,
         resetWindowUsesWeeklyPace: Bool = false,
-        blockingQuota: (windowID: String, message: String)? = nil)
+        blockingQuota: (windowID: String, message: String)? = nil,
+        placesExtraRateWindowsOnTop: Bool = false)
     {
         self.usageNotesResolver = usageNotesResolver
         self.creditsVisibility = creditsVisibility
@@ -363,6 +365,7 @@ public struct ProviderMenuCardPresentation: Sendable {
         self.usesRawPrimaryResetDescription = usesRawPrimaryResetDescription
         self.resetWindowUsesWeeklyPace = resetWindowUsesWeeklyPace
         self.blockingQuota = blockingQuota
+        self.placesExtraRateWindowsOnTop = placesExtraRateWindowsOnTop
     }
 
     public func usageNotes(context: ProviderUsageNotesContext) -> ProviderUsageNotesResolution {

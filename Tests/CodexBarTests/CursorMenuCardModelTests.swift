@@ -235,7 +235,7 @@ struct CursorMenuCardModelTests {
     }
 
     @Test
-    func `grok bot extra window renders after monthly bars`() throws {
+    func `grok bot extra window renders at top before monthly bars`() throws {
         let now = Date(timeIntervalSince1970: 0)
         let monthlyReset = now.addingTimeInterval(26 * 24 * 3600)
         let weeklyReset = now.addingTimeInterval(3 * 24 * 3600)
@@ -276,10 +276,10 @@ struct CursorMenuCardModelTests {
             hidePersonalInfo: false,
             now: now))
 
-        #expect(model.metrics.map(\.title) == ["Total", "Cursor", "Third Party", "Grok Bot"])
-        #expect(model.metrics.last?.percentLabel == "0% left")
-        #expect(model.metrics.last?.detailLeftText == nil)
-        #expect(model.metrics.last?.detailRightText == nil)
+        #expect(model.metrics.map(\.title) == ["Grok Bot", "Total", "Cursor", "Third Party"])
+        #expect(model.metrics.first?.percentLabel == "0% left")
+        #expect(model.metrics.first?.detailLeftText == nil)
+        #expect(model.metrics.first?.detailRightText == nil)
     }
 
     @Test(arguments: [3.0, 28.0])

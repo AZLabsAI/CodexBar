@@ -71,6 +71,19 @@ function rows(text, showIdentity) {
             windows.push({key: "extra:" + extra.id, label: label,
                 remaining: remaining(scopedWindow), resetsAt: scopedWindow.resetsAt || "", pace: ""});
         });
+        if (entry.provider === "cursor") {
+            var grokIdx = -1;
+            for (var w = 0; w < windows.length; w++) {
+                if (windows[w].label === "Grok Bot" || String(windows[w].key).indexOf("cursor-grok-bot") !== -1 || String(windows[w].key).indexOf("sand-usage") !== -1) {
+                    grokIdx = w;
+                    break;
+                }
+            }
+            if (grokIdx > 0) {
+                var grokWin = windows.splice(grokIdx, 1)[0];
+                windows.unshift(grokWin);
+            }
+        }
         var accountName = entry.account || identity.accountEmail || usage.accountEmail || "";
         var planName = String(identity.loginMethod || usage.loginMethod || "");
         if (entry.provider === "claude") {

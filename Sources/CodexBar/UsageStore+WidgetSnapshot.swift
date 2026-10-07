@@ -515,7 +515,7 @@ extension UsageStore {
         }
         // Provider-specific by design: Cursor Grok Bot weekly included usage is a named extraRateWindow.
         if provider == .cursor {
-            rows.append(contentsOf: (snapshot.extraRateWindows ?? []).compactMap { namedWindow in
+            let grokRows = (snapshot.extraRateWindows ?? []).compactMap { namedWindow -> WidgetSnapshot.WidgetUsageRowSnapshot? in
                 guard namedWindow.id == CursorSandUsageStatus.extraWindowID, namedWindow.usageKnown else {
                     return nil
                 }
@@ -524,7 +524,8 @@ extension UsageStore {
                     title: namedWindow.title,
                     percentLeft: namedWindow.window.remainingPercent,
                     window: namedWindow.window)
-            })
+            }
+            rows.insert(contentsOf: grokRows, at: 0)
         }
 
         if provider == .claude, self.settings.claudeModelScopedWeeklyUsageVisible {

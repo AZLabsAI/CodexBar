@@ -409,8 +409,14 @@ enum DashboardSnapshotBuilder {
         if let tertiary = usage.tertiary {
             windows.append(self.makeWindow(kind: "tertiary", label: labels.tertiary, window: tertiary))
         }
-        for extra in usage.extraRateWindows ?? [] {
-            windows.append(self.makeWindow(kind: extra.id, label: extra.title, window: extra.window))
+        let extraWindows = (usage.extraRateWindows ?? []).map { extra in
+            self.makeWindow(kind: extra.id, label: extra.title, window: extra.window)
+        }
+        let presentation = provider.flatMap { ProviderDescriptorRegistry.descriptor(for: $0).presentation }
+        if presentation?.menuCard.placesExtraRateWindowsOnTop == true {
+            windows.insert(contentsOf: extraWindows, at: 0)
+        } else {
+            windows.append(contentsOf: extraWindows)
         }
 
         return windows

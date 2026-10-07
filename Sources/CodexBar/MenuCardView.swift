@@ -1249,10 +1249,16 @@ extension UsageMenuCardView.Model {
                     thresholds: input.quotaWarningThresholds[.weekly],
                     showUsed: input.usageBarsShowUsed)))
         }
-        metrics.append(contentsOf: Self.extraRateWindowMetrics(
+        let extraMetrics = Self.extraRateWindowMetrics(
             snapshot: snapshot,
             input: input,
-            percentStyle: percentStyle))
+            percentStyle: percentStyle)
+        let presentation = ProviderDescriptorRegistry.descriptor(for: input.provider).presentation
+        if presentation.menuCard.placesExtraRateWindowsOnTop {
+            metrics.insert(contentsOf: extraMetrics, at: 0)
+        } else {
+            metrics.append(contentsOf: extraMetrics)
+        }
         if input.provider == .kilo || input.provider == .kimi,
            metrics.contains(where: { $0.id == "primary" }),
            metrics.contains(where: { $0.id == "secondary" })

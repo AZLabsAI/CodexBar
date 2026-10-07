@@ -338,10 +338,16 @@ enum CLIRenderer {
                 (labels.secondary, snapshot.secondary),
                 (labels.tertiary, labels.showsTertiary ? snapshot.tertiary : nil),
             ]
-            windows = slots.compactMap { label, window in
+            let standardWindows = slots.compactMap { label, window -> NamedRateWindow? in
                 guard let window, !window.isSyntheticPlaceholder else { return nil }
                 return NamedRateWindow(id: label, title: label, window: window)
-            } + descriptor.presentation.extraRateWindows(snapshot: snapshot)
+            }
+            let extraWindows = descriptor.presentation.extraRateWindows(snapshot: snapshot)
+            if descriptor.presentation.menuCard.placesExtraRateWindowsOnTop {
+                windows = extraWindows + standardWindows
+            } else {
+                windows = standardWindows + extraWindows
+            }
         }
         return windows.map {
             self.makeCardMetric(provider: provider, window: $0, resetStyle: resetStyle, now: now)

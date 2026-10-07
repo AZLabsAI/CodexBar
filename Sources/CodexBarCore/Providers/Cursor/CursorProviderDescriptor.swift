@@ -90,7 +90,8 @@ public enum CursorProviderDescriptor {
                 menuCard: ProviderMenuCardPresentation(
                     costVisibilityResolver: { $0.showOptionalUsage },
                     supportsInlineTokenCostDashboard: true,
-                    primaryDetailKind: .requestQuota)),
+                    primaryDetailKind: .requestQuota,
+                    placesExtraRateWindowsOnTop: true)),
             fetchPlan: ProviderFetchPlan(
                 sourceModes: [.auto, .cli, .web],
                 pipeline: ProviderFetchPipeline(resolveStrategies: { _ in [CursorStatusFetchStrategy()] })),
