@@ -12,6 +12,7 @@
 class DesktopController : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList providers READ providers NOTIFY settingsChanged)
+    Q_PROPERTY(QStringList uniqueProviders READ uniqueProviders NOTIFY changed)
     Q_PROPERTY(bool launchAtLogin READ launchAtLogin NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList entries READ entries NOTIFY changed)
     Q_PROPERTY(QVariantList spending READ spending NOTIFY changed)
@@ -30,9 +31,18 @@ public:
     ~DesktopController() override;
     bool listen(const QString &socket);
     QVariantList providers() const { return m_providers; }
+    QStringList uniqueProviders() const;
     bool launchAtLogin() const;
     Q_INVOKABLE bool setLaunchAtLogin(bool enabled);
     Q_INVOKABLE bool accountAction(const QString &provider, const QString &action);
+    Q_INVOKABLE bool setTopAccount(const QString &provider, int accountIndex);
+    Q_INVOKABLE bool moveAccount(const QString &provider, int fromIndex, int toIndex);
+    Q_INVOKABLE bool setStarredModel(const QString &provider, const QString &label, const QString &key = QString());
+    Q_INVOKABLE bool isStarredModel(const QString &provider, const QString &label, const QString &key = QString()) const;
+    Q_INVOKABLE QVariantMap starredModel() const;
+    Q_INVOKABLE void refreshAccount(const QString &provider, int accountIndex = 1);
+    Q_INVOKABLE bool isAccountRefreshing(const QString &provider, int accountIndex = 1) const;
+    Q_INVOKABLE int providerAccountCount(const QString &provider) const;
     QVariantList entries() const { return m_entries; }
     QVariantList spending() const { return m_spending; }
     QVariantMap settings() const { return m_settings; }
@@ -47,6 +57,8 @@ public:
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void refreshCosts();
     Q_INVOKABLE void showWindow(const QString &page);
+    Q_INVOKABLE int cursorX() const;
+    Q_INVOKABLE int cursorY() const;
     Q_INVOKABLE bool saveSettings(const QVariantMap &changes);
     Q_INVOKABLE void copySummary();
     QJsonObject snapshot() const;
@@ -55,11 +67,14 @@ signals:
     void changed();
     void settingsChanged();
     void windowRequested(const QString &page);
+    void accountRefreshingChanged();
 
 private:
     QJSEngine m_engine;
     QJSValue m_usageModel, m_noticeModel, m_noticeState;
-    QProcess m_usage, m_cost, m_catalog;
+    QProcess m_usage, m_cost, m_catalog, m_accountProcess;
+    QString m_refreshingProvider;
+    int m_refreshingAccountIndex = 0;
     QVariantList m_providers, m_batchEntries;
     QStringList m_pendingProviders;
     QString m_currentProvider;

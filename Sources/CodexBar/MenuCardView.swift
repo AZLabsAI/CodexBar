@@ -605,6 +605,25 @@ private struct UsageMenuCardUsageContentView: View {
         return (coding, agent)
     }
 
+    /// Factory (Droid) ships standard quota windows (5-hour, 7-day, Monthly)
+    /// and core rate windows (Core 5h, Core 7-day, Core Monthly). Split them
+    /// so the standard and core sections have a subtle, clear divider.
+    private var factorySplitMetrics: (
+        standard: [UsageMenuCardView.Model.Metric],
+        core: [UsageMenuCardView.Model.Metric])?
+    {
+        guard self.model.provider == .factory else { return nil }
+        let core = self.model.metrics.filter {
+            $0.id.contains("core") || $0.title.localizedCaseInsensitiveContains("core")
+        }
+        guard !core.isEmpty else { return nil }
+        let standard = self.model.metrics.filter {
+            !$0.id.contains("core") && !$0.title.localizedCaseInsensitiveContains("core")
+        }
+        guard !standard.isEmpty else { return nil }
+        return (standard, core)
+    }
+
     private func groupHeader(_ title: String) -> some View {
         Text(L(title))
             .font(.caption.weight(.semibold))
@@ -635,6 +654,16 @@ private struct UsageMenuCardUsageContentView: View {
                 }
                 self.groupHeader("Agent Plan")
                 self.metricRows(split.agent)
+            } else if let split = self.factorySplitMetrics {
+                if !split.standard.isEmpty {
+                    self.groupHeader("Standard")
+                    self.metricRows(split.standard)
+                }
+                if !split.standard.isEmpty, self.showsSectionDividers {
+                    Divider()
+                }
+                self.groupHeader("Core")
+                self.metricRows(split.core)
             } else {
                 self.metricRows(self.model.metrics)
             }

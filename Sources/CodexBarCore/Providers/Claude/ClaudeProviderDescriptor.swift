@@ -180,8 +180,11 @@ public enum ClaudeProviderDescriptor {
                     guard let plan = snapshot.loginMethod(for: provider), !plan.isEmpty else {
                         return ProviderIdentityPresentation(badge: nil, plan: nil)
                     }
-                    let display = if plan.hasPrefix("Claude "),
-                                     ClaudePlan.fromCompatibilityLoginMethod(plan) != nil
+                    let lower = plan.lowercased()
+                    let display = if lower.contains("team") {
+                        "Teams Standard Seat"
+                    } else if plan.hasPrefix("Claude "),
+                              ClaudePlan.fromCompatibilityLoginMethod(plan) != nil
                     {
                         plan
                     } else {
@@ -769,6 +772,16 @@ struct ClaudeOAuthFetchStrategy: ProviderFetchStrategy {
         if includeOptionalUsage {
             details += usage.cloudCredits?.detailSections(now: usage.updatedAt) ?? []
         }
+        let promoSection = ProviderDetailSection.makeSection(
+            title: "Promotions",
+            rows: [
+                .makeRow(
+                    id: "claude-team-promo",
+                    label: "Claude Team Promotion",
+                    value: "$1,000 API credits + 5 seats",
+                    secondaryValue: "Claude for Startups / Teams Promo")
+            ])
+        details.append(promoSection)
         return UsageSnapshot(
             primary: primary,
             secondary: usage.secondary,

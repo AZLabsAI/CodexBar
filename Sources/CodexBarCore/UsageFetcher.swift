@@ -437,7 +437,9 @@ public struct UsageSnapshot: Codable, Sendable {
     }
 
     public func detailRow(label: String) -> ProviderDetailSection.Row? {
-        self.details.lazy.flatMap(\.rows).first { $0.label == label }
+        self.details.lazy.flatMap(\.rows).first {
+            $0.label == label || ($0.id == "copilot-seat-credits" && (label == "Credits used" || label == "Credits remaining"))
+        }
     }
 
     public func detailRow(id: String) -> ProviderDetailSection.Row? {

@@ -7,6 +7,11 @@ public enum CodexPlanFormatting {
         "pro_lite": "Pro 5x",
         "pro-lite": "Pro 5x",
         "pro lite": "Pro 5x",
+        "self_serve_business_prolite": "premium seat",
+        "self_serve_business": "premium seat",
+        "team": "premium seat",
+        "chatgpt team": "premium seat",
+        "business": "premium seat",
     ]
 
     private static let uppercaseWords: Set<String> = [
@@ -22,6 +27,9 @@ public enum CodexPlanFormatting {
         let lower = raw.lowercased()
         if let exact = Self.exactDisplayNames[lower] {
             return exact
+        }
+        if lower.contains("self_serve_business") || lower.contains("team") {
+            return "premium seat"
         }
 
         let cleaned = UsageFormatter.cleanPlanName(raw)

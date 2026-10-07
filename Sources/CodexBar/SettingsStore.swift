@@ -744,7 +744,7 @@ extension SettingsStore {
             predictivePaceWarningNotificationsEnabled: userDefaults.object(
                 forKey: "predictivePaceWarningNotificationsEnabled") as? Bool ?? false,
             limitResetNotificationsEnabled: userDefaults.object(
-                forKey: "limitResetNotificationsEnabled") as? Bool ?? false)
+                forKey: "limitResetNotificationsEnabled") as? Bool ?? true)
     }
 
     private static func loadCostSummaryDisplayStyleRaw(
@@ -927,7 +927,7 @@ extension SettingsStore {
     }
 
     private static func loadQuotaWarningDefaults(userDefaults: UserDefaults) -> LoadedQuotaWarningDefaults {
-        let notificationsEnabled = userDefaults.object(forKey: "quotaWarningNotificationsEnabled") as? Bool ?? false
+        let notificationsEnabled = userDefaults.object(forKey: "quotaWarningNotificationsEnabled") as? Bool ?? true
         let rawThresholds = userDefaults.array(forKey: "quotaWarningThresholds") as? [Int]
         let thresholdsRaw = QuotaWarningThresholds.sanitized(rawThresholds ?? QuotaWarningThresholds.defaults)
         if Self.isRunningTests, rawThresholds != thresholdsRaw {

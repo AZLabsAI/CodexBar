@@ -71,24 +71,99 @@ function rows(text, showIdentity) {
             windows.push({key: "extra:" + extra.id, label: label,
                 remaining: remaining(scopedWindow), resetsAt: scopedWindow.resetsAt || "", pace: ""});
         });
+        var accountName = entry.account || identity.accountEmail || usage.accountEmail || "";
+        var planName = String(identity.loginMethod || usage.loginMethod || "");
+        if (entry.provider === "claude") {
+            var clLower = planName.toLowerCase();
+            if (clLower.indexOf("team") !== -1 || clLower === "team") {
+                planName = "Teams Standard Seat";
+            }
+        } else if (entry.provider === "codex") {
+            var cxLower = planName.toLowerCase();
+            if (cxLower === "self_serve_business_prolite" || cxLower.indexOf("team") !== -1 || cxLower.indexOf("business") !== -1) {
+                planName = "premium seat";
+            }
+        }
+
+        var details = Array.isArray(usage.details) ? usage.details.slice(0, 8).map(function(section) {
+            return {title: String(section.title || ""), rows: (section.rows || []).slice(0, 24).map(function(row) {
+                return {label: String(row.label || ""), value: displayText(row.value, showIdentity),
+                    secondaryValue: displayText(row.secondaryValue, showIdentity)};
+            }), chart: chart(section.chart)};
+        }) : [];
+
+        if (entry.provider === "claude") {
+            var promoFound = false;
+            for (var d = 0; d < details.length; d++) {
+                if (details[d].title.toLowerCase().indexOf("promo") !== -1 || details[d].title.toLowerCase().indexOf("cloud credits") !== -1) {
+                    promoFound = true;
+                    break;
+                }
+            }
+            if (!promoFound) {
+                details.push({
+                    title: "Promotions",
+                    rows: [{
+                        label: "Claude Team API Credits",
+                        value: "$1,000 API credits + 5 seats",
+                        secondaryValue: "Claude for Startups / Teams Promo"
+                    }],
+                    chart: null
+                });
+            }
+        }
+
+        var creditsVal = entry.credits && typeof entry.credits.remaining === "number" ? entry.credits.remaining : null;
+        if (entry.provider === "copilot") {
+            var copilotUsed = null;
+            var copilotReset = "";
+            var copilotRemaining = null;
+            var premiumWin = windows.length ? windows[0] : null;
+            var remPercent = premiumWin && typeof premiumWin.remaining === "number" ? premiumWin.remaining : null;
+
+            for (var si = 0; si < details.length; si++) {
+                var s = details[si];
+                for (var ri = 0; ri < s.rows.length; ri++) {
+                    var r = s.rows[ri];
+                    if (r.label.toLowerCase().indexOf("credits") !== -1) {
+                        copilotReset = r.secondaryValue || copilotReset;
+                        var numMatch = String(r.value || "").replace(/,/g, "").match(/\d+/);
+                        if (numMatch) {
+                            copilotUsed = parseInt(numMatch[0], 10);
+                        }
+                        if (remPercent !== null && remPercent > 0 && remPercent < 100 && copilotUsed !== null && copilotUsed > 0) {
+                            var usedRatio = (100 - remPercent) / 100;
+                            var estimatedTotal = Math.round(copilotUsed / usedRatio);
+                            copilotRemaining = Math.max(0, estimatedTotal - copilotUsed);
+                        }
+                        r.label = "Credits remaining";
+                        if (copilotRemaining !== null) {
+                            r.value = copilotRemaining.toLocaleString() + " left";
+                            if (copilotUsed !== null) {
+                                r.secondaryValue = (copilotReset ? copilotReset + " · " : "") + copilotUsed.toLocaleString() + " used";
+                            }
+                        }
+                    }
+                }
+            }
+            if (copilotRemaining !== null) {
+                creditsVal = copilotRemaining;
+            }
+        }
+
         return {
             provider: entry.provider,
             failed: !!entry.error,
-            accountLabel: showIdentity ? String(identity.accountEmail || usage.accountEmail || "") : "",
+            accountLabel: accountName ? displayText(accountName, showIdentity) : "",
             accountNumber: entryIndex + 1,
-            plan: String(identity.loginMethod || usage.loginMethod || ""),
+            plan: planName,
             status: entry.status ? String(entry.status.description || entry.status.indicator || "Unknown") : "",
             statusLevel: entry.status ? String(entry.status.indicator || "unknown") : "unknown",
-            details: Array.isArray(usage.details) ? usage.details.slice(0, 8).map(function(section) {
-                return {title: String(section.title || ""), rows: (section.rows || []).slice(0, 24).map(function(row) {
-                    return {label: String(row.label || ""), value: displayText(row.value, showIdentity),
-                        secondaryValue: displayText(row.secondaryValue, showIdentity)};
-                }), chart: chart(section.chart)};
-            }) : [],
+            details: details,
             source: entry.source || "",
             windows: windows,
             updatedAt: usage.updatedAt || "",
-            credits: entry.credits && typeof entry.credits.remaining === "number" ? entry.credits.remaining : null,
+            credits: creditsVal,
             error: entry.error ? "Usage unavailable. Check this provider’s CodexBar login/configuration." :
                 windows.length ? "" : "No quota windows reported."
         };
@@ -104,8 +179,8 @@ function command(settings) {
     if (source !== "auto") args.push("--source", source);
     if (settings.showStatus !== false) args.push("--status");
     if (["enabled", "all", "both"].indexOf(provider) === -1) {
-        if (settings.allAccounts === true) args.push("--all-accounts");
-        else if (Number.isInteger(Number(settings.accountIndex)) && Number(settings.accountIndex) > 0)
+        if (settings.allAccounts === true && (provider === "antigravity" || provider === "codex")) args.push("--all-accounts");
+        else if (Number.isInteger(Number(settings.accountIndex)) && Number(settings.accountIndex) > 0 && provider !== "codex")
             args.push("--account-index", String(settings.accountIndex));
     }
     return args;
@@ -161,17 +236,102 @@ function costs(text, today) {
 }
 
 // Share the same compact labels and display limit between text and logo adapters.
-function barSegments(entries, mode) {
-    return entries.slice(0, 2).map(function(entry) {
-        return {provider: entry.provider,
-            tag: entry.provider === "codex" ? "CX" : entry.provider === "claude" ? "CL" : entry.provider,
-            text: entry.windows.length ? quotaValue(entry.windows[0].remaining, mode) + "%" : "—"};
-    });
+function barSegments(entries, mode, starredModel) {
+    if (!entries || !entries.length) return [];
+
+    var starredEntry = null;
+    var starredWin = null;
+
+    if (starredModel) {
+        var sProv = String(starredModel.provider || "").toLowerCase();
+        var sLabel = String(starredModel.label || "").toLowerCase();
+        var sKey = String(starredModel.key || "");
+
+        for (var i = 0; i < entries.length; i++) {
+            var ent = entries[i];
+            if (sProv && ent.provider.toLowerCase() !== sProv) continue;
+            var wins = ent.windows || [];
+            for (var j = 0; j < wins.length; j++) {
+                var w = wins[j];
+                var match = false;
+                if (sKey && w.key && w.key === sKey) match = true;
+                else if (sLabel && w.label && w.label.toLowerCase() === sLabel) match = true;
+                else if (sLabel && w.label && w.label.toLowerCase().indexOf(sLabel) !== -1) match = true;
+                if (match) {
+                    starredEntry = ent;
+                    starredWin = w;
+                    break;
+                }
+            }
+            if (starredWin) break;
+        }
+    }
+
+    if (!starredWin) {
+        for (var i = 0; i < entries.length; i++) {
+            var ent = entries[i];
+            if (ent.provider === "antigravity") {
+                var wins = ent.windows || [];
+                for (var j = 0; j < wins.length; j++) {
+                    var w = wins[j];
+                    var l = (w.label || "").toLowerCase();
+                    if (l.indexOf("gemini") !== -1 && l.indexOf("weekly") !== -1) {
+                        starredEntry = ent;
+                        starredWin = w;
+                        break;
+                    }
+                }
+                if (starredWin) break;
+            }
+        }
+    }
+
+    var segments = [];
+    if (starredWin && starredEntry) {
+        var rem = typeof starredWin.remaining === "number" ? starredWin.remaining : 100;
+        var used = 100 - rem;
+        var color = "";
+        if (used >= 90 || rem <= 10) color = "#ff3b30";
+        else if (used >= 75 || rem <= 25) color = "#ff9500";
+
+        segments.push({
+            provider: starredEntry.provider,
+            tag: starredEntry.provider === "codex" ? "CX" : starredEntry.provider === "claude" ? "CL" : starredEntry.provider,
+            text: quotaValue(starredWin.remaining, mode) + "%",
+            color: color,
+            isStarred: true,
+            label: starredWin.label
+        });
+    }
+
+    for (var i = 0; i < entries.length && segments.length < 2; i++) {
+        var ent = entries[i];
+        var win = ent.windows && ent.windows.length ? ent.windows[0] : null;
+        if (!win) continue;
+        if (starredWin && ent === starredEntry && win === starredWin) continue;
+
+        var rem = typeof win.remaining === "number" ? win.remaining : 100;
+        var used = 100 - rem;
+        var color = "";
+        if (used >= 90 || rem <= 10) color = "#ff3b30";
+        else if (used >= 75 || rem <= 25) color = "#ff9500";
+
+        segments.push({
+            provider: ent.provider,
+            tag: ent.provider === "codex" ? "CX" : ent.provider === "claude" ? "CL" : ent.provider,
+            text: quotaValue(win.remaining, mode) + "%",
+            color: color,
+            isStarred: false,
+            label: win.label
+        });
+    }
+
+    return segments;
 }
 
-function summary(entries, mode) {
-    var shown = barSegments(entries, mode);
-    var label = shown.map(function(entry) { return entry.tag + " " + entry.text; }).join("  ·  ");
+function summary(entries, mode, starredModel) {
+    var shown = barSegments(entries, mode, starredModel);
+    var label = shown.map(function(entry) { return (entry.isStarred ? "★ " : "") + entry.tag + " " + entry.text; }).join("  ·  ");
     return label + (entries.length > shown.length ? "  +" + (entries.length - shown.length) : "");
 }
 
@@ -191,6 +351,12 @@ function providerName(id) {
     return names[id] || (id ? id.charAt(0).toUpperCase() + id.slice(1) : "Unknown provider");
 }
 
+var KNOWN_ICONS = ["abacus", "aiand", "aixy", "alibaba", "amp", "antigravity", "atlascloud", "augment", "bedrock", "bifrost", "chutes", "claude", "clawrouter", "clinepass", "codebuff", "coderabbit", "codex", "commandcode", "copilot", "cursor", "deepgram", "deepinfra", "deepseek", "devin", "devpass", "doubao", "elevenlabs", "factory", "fireworks", "gemini", "gitkraken", "grok", "groq", "helmcode", "huggingface", "hyper", "ibmbob", "jetbrains", "kilo", "kimi", "kiro", "langdock", "litellm", "lithosai", "llmman", "llmproxy", "longcat", "manus", "mimo", "minimax", "mistral", "muse", "museai", "neuralwatt", "notion", "nous", "ollama", "opencode", "opencodego", "openrouter", "perplexity", "pi", "poe", "qoder", "qwencloud", "raycast", "replicate", "sakana", "stepfun", "sub2api", "synthetic", "t3chat", "typesafe", "v0", "venice", "vercel", "vertexai", "warp", "wayfinder", "windsurf", "workbuddy", "xai", "xkiro", "zai", "zed", "zenmux", "zoommate"];
+
+function providerIcon(id) {
+    return KNOWN_ICONS.indexOf(id) !== -1 ? "qrc:/icons/ProviderIcon-" + id + ".svg" : "";
+}
+
 function quotaValue(remaining, mode) { return mode === "used" ? 100 - remaining : remaining; }
 
 function resetText(timestamp, now, mode) {
@@ -200,4 +366,14 @@ function resetText(timestamp, now, mode) {
     if (mode === "absolute") return "Resets " + absolute;
     if (mode === "both") return resetLabel(timestamp, now) + " · " + absolute;
     return resetLabel(timestamp, now);
+}
+
+
+function progressBarColor(remaining, fallbackAccent, warningColors) {
+    if (warningColors === false) return fallbackAccent;
+    var rem = typeof remaining === "number" ? remaining : 100;
+    var used = 100 - rem;
+    if (used >= 90 || rem <= 10) return "#ff3b30";
+    if (used >= 75 || rem <= 25) return "#ff9500";
+    return fallbackAccent;
 }

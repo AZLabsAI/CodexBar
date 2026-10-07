@@ -87,9 +87,31 @@ public struct CopilotUsageFetcher: Sendable {
         let chat = Self.makeRateWindow(from: chatSnapshot, resetsAt: resetsAt)
         let hasUnlimitedQuota = premiumSnapshot?.unlimited == true || chatSnapshot?.unlimited == true
         let creditsUsed = premiumSnapshot?.creditsUsed ?? chatSnapshot?.creditsUsed
+        let activeSnapshot = premiumSnapshot ?? chatSnapshot
+        var remainingCredits: Double? = nil
+        var totalCredits: Double? = self.seatEntitlement
+
+        if let seatEntitlement, let creditsUsed {
+            remainingCredits = max(0, seatEntitlement - creditsUsed)
+        } else if let active = activeSnapshot, active.remaining > 0 {
+            remainingCredits = active.remaining
+            if active.entitlement > 0 {
+                totalCredits = active.entitlement
+            }
+        } else if let active = activeSnapshot, let used = creditsUsed, used > 0,
+                  active.hasPercentRemaining, active.percentRemaining > 0, active.percentRemaining < 100
+        {
+            let usedPercent = 100.0 - active.percentRemaining
+            let derivedTotal = round(used / (usedPercent / 100.0))
+            remainingCredits = max(0, derivedTotal - used)
+            totalCredits = derivedTotal
+        }
+
         let details = Self.makeCreditDetails(
             creditsUsed: creditsUsed,
             seatEntitlement: self.seatEntitlement,
+            remainingCredits: remainingCredits,
+            totalCredits: totalCredits,
             tokenBasedBilling: usage.tokenBasedBilling,
             hasUnlimitedQuota: hasUnlimitedQuota,
             resetsAt: resetsAt)
@@ -190,6 +212,8 @@ public struct CopilotUsageFetcher: Sendable {
     static func makeCreditDetails(
         creditsUsed: Double?,
         seatEntitlement: Double?,
+        remainingCredits: Double? = nil,
+        totalCredits: Double? = nil,
         tokenBasedBilling: Bool,
         hasUnlimitedQuota: Bool,
         resetsAt: Date?) -> [ProviderDetailSection]
@@ -205,22 +229,42 @@ public struct CopilotUsageFetcher: Sendable {
 
         let usedLabel = UsageFormatter.creditsNumberString(from: creditsUsed)
         let resetText = resetsAt.map { UsageFormatter.resetDescription(from: $0) }
-        let row: ProviderDetailSection.Row = if let seatEntitlement {
-            // GitHub publishes no included-credit ceiling on any documented endpoint, so the
-            // denominator is user-entered; the bar's ratio travels as data on the shared row
-            // contract while the caption keeps the raw numbers.
+        let row: ProviderDetailSection.Row = if let remaining = remainingCredits {
+            let remainingLabel = UsageFormatter.creditsNumberString(from: remaining)
+            let valueText = if let total = totalCredits, total > 0 {
+                "\(remainingLabel) left / \(UsageFormatter.creditsNumberString(from: total))"
+            } else {
+                "\(remainingLabel) left"
+            }
+            let progress = if let total = totalCredits, total > 0 {
+                ProviderDetailSection.Row.Progress.makeProgress(used: creditsUsed, total: total)
+            } else {
+                nil as ProviderDetailSection.Row.Progress?
+            }
+            let secondary = [resetText, "\(usedLabel) used"].compactMap(\.self).joined(separator: " · ")
             .makeRow(
                 id: CopilotCreditDetailRows.seatRowID,
-                label: "Credits used",
-                value: "\(usedLabel) / \(UsageFormatter.creditsNumberString(from: seatEntitlement))",
-                secondaryValue: resetText,
+                label: "Credits remaining",
+                value: valueText,
+                secondaryValue: secondary.isEmpty ? nil : secondary,
+                progress: progress,
+                usageValue: remaining)
+        } else if let seatEntitlement {
+            let remaining = max(0, seatEntitlement - creditsUsed)
+            let remainingLabel = UsageFormatter.creditsNumberString(from: remaining)
+            let secondary = [resetText, "\(usedLabel) used"].compactMap(\.self).joined(separator: " · ")
+            .makeRow(
+                id: CopilotCreditDetailRows.seatRowID,
+                label: "Credits remaining",
+                value: "\(remainingLabel) left / \(UsageFormatter.creditsNumberString(from: seatEntitlement))",
+                secondaryValue: secondary.isEmpty ? nil : secondary,
                 progress: .makeProgress(used: creditsUsed, total: seatEntitlement),
-                usageValue: creditsUsed)
+                usageValue: remaining)
         } else {
             .makeRow(
                 id: CopilotCreditDetailRows.seatRowID,
-                label: "Credits used",
-                value: usedLabel,
+                label: "Credits remaining",
+                value: "\(usedLabel) used",
                 secondaryValue: resetText,
                 usageValue: creditsUsed)
         }

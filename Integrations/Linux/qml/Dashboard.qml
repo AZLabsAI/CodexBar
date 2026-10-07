@@ -62,7 +62,38 @@ ApplicationWindow {
                 spacing: 16
                 Repeater {
                     model: window.selectedTab === 0 ? desktop.entries : []
-                    UsageCard { required property var modelData; entry: modelData }
+                    ColumnLayout {
+                        required property var modelData
+                        required property int index
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        // Distinctive divider between accounts
+                        Rectangle {
+                            visible: index > 0
+                            Layout.fillWidth: true
+                            height: 2
+                            radius: 1
+                            color: {
+                                var prev = desktop.entries[index - 1];
+                                if (prev && prev.provider === modelData.provider) {
+                                    return palette.highlight;
+                                }
+                                return Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.25);
+                            }
+                            opacity: {
+                                var prev = desktop.entries[index - 1];
+                                return (prev && prev.provider === modelData.provider) ? 0.8 : 0.45;
+                            }
+                            Layout.topMargin: 6
+                            Layout.bottomMargin: 6
+                        }
+
+                        UsageCard {
+                            entry: modelData
+                            Layout.fillWidth: true
+                        }
+                    }
                 }
                 Label {
                     visible: window.selectedTab === 1

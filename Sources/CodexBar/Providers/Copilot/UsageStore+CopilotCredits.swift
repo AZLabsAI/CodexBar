@@ -153,7 +153,8 @@ extension UsageSnapshot {
                         used: used,
                         total: entitlement)
                     else { return row }
-                    value = "\(UsageFormatter.creditsNumberString(from: used)) / " +
+                    let remaining = max(0, entitlement - used)
+                    value = "\(UsageFormatter.creditsNumberString(from: remaining)) left / " +
                         UsageFormatter.creditsNumberString(from: entitlement)
                     progress = rebuilt
                 } else {
@@ -162,7 +163,7 @@ extension UsageSnapshot {
                 }
                 return (try? ProviderDetailSection.Row(
                     id: row.id,
-                    label: row.label,
+                    label: "Credits remaining",
                     value: value,
                     secondaryValue: row.secondaryValue,
                     progress: progress,
@@ -189,8 +190,8 @@ extension UsageSnapshot {
                   let progress = try? ProviderDetailSection.Row.Progress(used: 0, total: entitlement),
                   let row = try? ProviderDetailSection.Row(
                       id: CopilotCreditDetailRows.seatRowID,
-                      label: "Credits used",
-                      value: "0 / " + UsageFormatter.creditsNumberString(from: entitlement),
+                      label: "Credits remaining",
+                      value: "\(UsageFormatter.creditsNumberString(from: entitlement)) left / " + UsageFormatter.creditsNumberString(from: entitlement),
                       secondaryValue: (self.primary?.resetsAt ?? self.secondary?.resetsAt)
                           .map { UsageFormatter.resetDescription(from: $0) },
                       progress: progress,

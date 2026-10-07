@@ -783,6 +783,8 @@ private enum AccountFormatter {
     static func plan(_ text: String, provider: UsageProvider) -> String {
         let cleaned = if provider == .codex {
             CodexPlanFormatting.displayName(text) ?? UsageFormatter.cleanPlanName(text)
+        } else if provider == .claude {
+            text.lowercased().contains("team") ? "Teams Standard Seat" : UsageFormatter.cleanPlanName(text)
         } else {
             UsageFormatter.cleanPlanName(text)
         }

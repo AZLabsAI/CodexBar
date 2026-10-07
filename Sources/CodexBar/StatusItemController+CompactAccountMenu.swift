@@ -136,7 +136,7 @@ extension StatusItemController {
                     onClick: collapseClick))
                 previousRowWasCard = true
             case let .compact(compactRow):
-                if previousRowWasCard {
+                if index > 0 {
                     menu.addItem(.separator())
                 }
                 let rowModel = MenuCardCompactAccountRowView.Model(

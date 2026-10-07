@@ -3,6 +3,7 @@
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QCursor>
 #include <QDateTime>
 #include <QDBusConnection>
 #include <QDBusMessage>
@@ -41,7 +42,7 @@ void stop(QProcess &process) {
 }
 
 DesktopController::DesktopController(const QString &cliOverride, QObject *parent) : QObject(parent) {
-    m_usageModel = module(m_engine, ":/Shared/Usage.js", "rows:rows, costs:costs, command:command, summary:summary, barSegments:barSegments, resetText:resetText");
+    m_usageModel = module(m_engine, ":/Shared/Usage.js", "rows:rows, costs:costs, command:command, summary:summary, barSegments:barSegments, resetText:resetText, progressBarColor:progressBarColor");
     m_noticeModel = module(m_engine, ":/Shared/Notifications.js", "transition:transition, summary:summary");
     m_noticeState = m_engine.newObject();
     loadSettings(cliOverride);
@@ -55,7 +56,7 @@ DesktopController::DesktopController(const QString &cliOverride, QObject *parent
 
 DesktopController::~DesktopController() {
     m_usage.disconnect(this); m_cost.disconnect(this);
-    stop(m_usage); stop(m_cost); stop(m_catalog);
+    m_accountProcess.disconnect(this); stop(m_usage); stop(m_cost); stop(m_catalog); stop(m_accountProcess);
 }
 
 QJSValue DesktopController::call(const QJSValue &model, const QString &function, const QJSValueList &args) const {
@@ -100,15 +101,18 @@ bool DesktopController::validate(QVariantMap &values) {
     }
     for (const auto &key : {"allAccounts", "showIdentity", "showCosts", "showStatus", "notifications", "showTray", "refreshOnOpen", "showPace", "warningColors", "followOmarchyTheme"})
         values[key] = values.value(key).toBool();
+    if (values.contains("starredModel")) {
+        values["starredModel"] = values.value("starredModel").toMap();
+    }
     return true;
 }
 
 void DesktopController::loadSettings(const QString &cliOverride) {
     m_settings = {{"executable", "codexbar"}, {"provider", "codex"}, {"source", "auto"},
-        {"refreshSeconds", 300}, {"accountIndex", 0}, {"notifyThreshold", 10}, {"allAccounts", false},
-        {"showIdentity", false}, {"showCosts", true}, {"showStatus", true}, {"notifications", false}, {"showTray", true}, {"refreshOnOpen", false}, {"providerOrder", QStringList{}},
-        {"quotaDisplay", "remaining"}, {"resetDisplay", "countdown"}, {"showPace", true},
-        {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}};
+        {"refreshSeconds", 300}, {"accountIndex", 0}, {"notifyThreshold", 25}, {"allAccounts", false},
+        {"showIdentity", false}, {"showCosts", true}, {"showStatus", true}, {"notifications", true}, {"showTray", true}, {"refreshOnOpen", false}, {"providerOrder", QStringList{}},
+        {"quotaDisplay", "used"}, {"resetDisplay", "countdown"}, {"showPace", true},
+        {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}, {"starredModel", QVariantMap{{"provider", "antigravity"}, {"label", "Gemini weekly"}}}};
     m_configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/codexbar/linux.json";
     QFile file(m_configPath);
     QVariantMap candidate = m_settings;
@@ -173,6 +177,15 @@ QString DesktopController::updated() const {
     return m_updated ? QDateTime::fromMSecsSinceEpoch(m_updated).toLocalTime().toString("HH:mm") : QString();
 }
 
+QStringList DesktopController::uniqueProviders() const {
+    QStringList result;
+    for (const auto &item : m_entries) {
+        const QString p = item.toMap().value("provider").toString();
+        if (!p.isEmpty() && !result.contains(p)) result.append(p);
+    }
+    return result;
+}
+
 void DesktopController::refresh() {
     if (busy()) return;
     m_usageBatch = true; m_batchFailed = false; m_batchEntries.clear();
@@ -187,7 +200,7 @@ void DesktopController::nextProvider() {
     m_currentProvider = m_pendingProviders.takeFirst();
     auto selection = m_settings;
     selection["provider"] = m_currentProvider;
-    if (m_settings.value("provider") == "custom") { selection["accountIndex"] = 0; selection["allAccounts"] = false; }
+    if (m_settings.value("provider") == "custom") { selection["accountIndex"] = 0; }
     auto args = call(m_usageModel, "command", {m_engine.toScriptValue(selection)}).toVariant().toStringList();
     // Process deadlines and groups are managed here, without a coreutils dependency.
     args = args.mid(3);
@@ -288,15 +301,24 @@ void DesktopController::copySummary() {
 
 void DesktopController::showWindow(const QString &page) {
     if (page == "spending" && QDateTime::currentMSecsSinceEpoch() - m_costUpdated > 300000) refreshCosts();
-    if (page == "usage" && m_settings.value("refreshOnOpen").toBool()) refresh();
+    if ((page == "usage" || page == "mini") && m_settings.value("refreshOnOpen").toBool()) refresh();
     emit windowRequested(page);
+}
+
+int DesktopController::cursorX() const {
+    return QCursor::pos().x();
+}
+
+int DesktopController::cursorY() const {
+    return QCursor::pos().y();
 }
 
 void DesktopController::updateLabels() {
     const auto rows = m_engine.toScriptValue(m_entries);
     const auto mode = m_settings.value("quotaDisplay").toString();
-    m_summary = call(m_usageModel, "summary", {rows, mode}).toString();
-    m_barEntries = QJsonArray::fromVariantList(call(m_usageModel, "barSegments", {rows, mode}).toVariant().toList());
+    const auto starred = m_engine.toScriptValue(m_settings.value("starredModel"));
+    m_summary = call(m_usageModel, "summary", {rows, mode, starred}).toString();
+    m_barEntries = QJsonArray::fromVariantList(call(m_usageModel, "barSegments", {rows, mode, starred}).toVariant().toList());
 }
 
 QJsonObject DesktopController::snapshot() const {
@@ -315,19 +337,31 @@ QJsonObject DesktopController::snapshot() const {
                     QCryptographicHash::hash(extraKeySalt + identity.toUtf8(), QCryptographicHash::Sha256).toHex());
             }
             const auto remaining = window.value("remaining").toDouble();
+            const auto used = 100.0 - remaining;
             window["displayValue"] = m_settings.value("quotaDisplay") == "used" ? 100 - remaining : remaining;
             window["displaySuffix"] = m_settings.value("quotaDisplay") == "used" ? "used" : "left";
-            window["warning"] = m_settings.value("warningColors").toBool() && remaining <= m_settings.value("notifyThreshold").toInt();
+            window["warning"] = m_settings.value("warningColors").toBool() && (used >= 75.0 || remaining <= 25.0);
+            window["critical"] = m_settings.value("warningColors").toBool() && (used >= 90.0 || remaining <= 10.0);
+            window["barColor"] = (used >= 90.0 || remaining <= 10.0) ? "#ff3b30" : ((used >= 75.0 || remaining <= 25.0) ? "#ff9500" : "");
             // This model contains no identity; display fields keep adapters consistent with native windows.
             window["resetText"] = call(m_usageModel, "resetText",
                 {window.value("resetsAt").toString(), double(QDateTime::currentMSecsSinceEpoch()), m_settings.value("resetDisplay").toString()}).toString();
             windows.append(QJsonObject::fromVariantMap(window));
         }
-        compact.append(QJsonObject{{"provider", row.value("provider").toString()},
+        QJsonObject entryObj{
+            {"provider", row.value("provider").toString()},
+            {"accountLabel", row.value("accountLabel").toString()},
+            {"plan", row.value("plan").toString()},
             {"windows", windows},
-            {"error", row.value("error").toString()}});
+            {"details", QJsonArray::fromVariantList(row.value("details").toList())},
+            {"error", row.value("error").toString()}
+        };
+        if (!row.value("credits").isNull()) {
+            entryObj["credits"] = row.value("credits").toLongLong();
+        }
+        compact.append(entryObj);
     }
-    return {{"schemaVersion", 1}, {"pid", QCoreApplication::applicationPid()}, {"summary", m_summary}, {"barEntries", m_barEntries},
+    return {{"schemaVersion", 1}, {"pid", QCoreApplication::applicationPid()}, {"summary", m_summary}, {"barEntries", m_barEntries}, {"starredModel", QJsonObject::fromVariantMap(m_settings.value("starredModel").toMap())},
         {"entries", compact}, {"quotaDisplay", m_settings.value("quotaDisplay").toString()}, {"busy", busy()}, {"stale", stale()}, {"error", m_error},
         {"updated", updated()}, {"costBusy", costBusy()}, {"costProviders", m_spending.size()}, {"costError", m_costError}};
 }
@@ -356,7 +390,13 @@ bool DesktopController::listen(const QString &socketPath) {
                     response = {{"ok", ok}, {"enabled", launchAtLogin()}};
                 }
                 else if (command == "refresh") { refresh(); refreshCosts(); }
-                else if (command == "settings" || command == "usage" || command == "spending") showWindow(command);
+                else if (command == "refresh-account") {
+                    const auto provider = request.value("provider").toString();
+                    const int account = request.value("account").toInt(1);
+                    refreshAccount(provider, account);
+                    response = {{"ok", true}, {"provider", provider}, {"account", account}};
+                }
+                else if (command == "settings" || command == "usage" || command == "spending" || command == "mini") showWindow(command);
                 else if (command == "configure" && request.value("settings").isObject()) {
                     const bool ok = saveSettings(request.value("settings").toObject().toVariantMap());
                     response = {{"ok", ok}, {"error", m_configError}};
@@ -442,4 +482,210 @@ bool DesktopController::accountAction(const QString &provider, const QString &ac
         m_configError = "Could not open the sign-in terminal."; emit settingsChanged(); return false;
     }
     m_configError.clear(); emit settingsChanged(); return true;
+}
+
+namespace {
+// Auto-generated labels follow the account's position; user-chosen labels are left alone.
+QString renumberedLabel(const QString &label, int position) {
+    static const QRegularExpression pattern("^Account \\d+ \\((.*)\\)$");
+    const auto match = pattern.match(label);
+    return match.hasMatch() ? QString("Account %1 (%2)").arg(position).arg(match.captured(1)) : label;
+}
+}
+
+bool DesktopController::setTopAccount(const QString &provider, int accountIndex) {
+    return moveAccount(provider, accountIndex, 0);
+}
+
+bool DesktopController::moveAccount(const QString &provider, int fromIndex, int toIndex) {
+    if (fromIndex == toIndex || fromIndex < 0 || toIndex < 0) return false;
+    const QString configPath = QDir::homePath() + "/.codexbar/config.json";
+    QFile file(configPath);
+    if (!file.open(QIODevice::ReadOnly)) return false;
+    const auto doc = QJsonDocument::fromJson(file.readAll());
+    file.close();
+    if (!doc.isObject()) return false;
+    auto rootObj = doc.object();
+    auto providersArray = rootObj.value("providers").toArray();
+    bool found = false;
+    for (int pIdx = 0; pIdx < providersArray.size(); ++pIdx) {
+        auto provObj = providersArray[pIdx].toObject();
+        if (provObj.value("id").toString() == provider) {
+            auto tokenAccounts = provObj.value("tokenAccounts").toObject();
+            auto accountsArray = tokenAccounts.value("accounts").toArray();
+            if (fromIndex >= accountsArray.size() || toIndex >= accountsArray.size()) return false;
+            auto item = accountsArray.takeAt(fromIndex);
+            accountsArray.insert(toIndex, item);
+            for (int i = 0; i < accountsArray.size(); ++i) {
+                auto acc = accountsArray[i].toObject();
+                const QString label = acc.value("label").toString();
+                const QString renumbered = renumberedLabel(label, i + 1);
+                if (renumbered != label) {
+                    acc["label"] = renumbered;
+                    accountsArray[i] = acc;
+                }
+            }
+            tokenAccounts["accounts"] = accountsArray;
+            provObj["tokenAccounts"] = tokenAccounts;
+            providersArray[pIdx] = provObj;
+            found = true;
+            break;
+        }
+    }
+    if (!found) return false;
+    rootObj["providers"] = providersArray;
+    // The file holds provider tokens and is shared with the CLI: keep a private copy before rewriting it.
+    const QString backupPath = configPath + ".bak";
+    QFile::remove(backupPath);
+    if (!QFile::copy(configPath, backupPath)) return false;
+    QFile::setPermissions(backupPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    QSaveFile saveFile(configPath);
+    if (!saveFile.open(QIODevice::WriteOnly)) return false;
+    const auto encoded = QJsonDocument(rootObj).toJson(QJsonDocument::Indented);
+    if (saveFile.write(encoded) != encoded.size() || !saveFile.commit()) return false;
+
+    // Immediately update in-memory entries for instant UI feedback
+    QVariantList providerEntries;
+    QVariantList otherEntries;
+    for (const auto &entry : m_entries) {
+        if (entry.toMap().value("provider").toString() == provider)
+            providerEntries.append(entry);
+        else
+            otherEntries.append(entry);
+    }
+    if (fromIndex < providerEntries.size() && toIndex < providerEntries.size()) {
+        auto moved = providerEntries.takeAt(fromIndex);
+        providerEntries.insert(toIndex, moved);
+        for (int i = 0; i < providerEntries.size(); ++i) {
+            auto map = providerEntries[i].toMap();
+            map["accountNumber"] = i + 1;
+            map["accountLabel"] = renumberedLabel(map.value("accountLabel").toString(), i + 1);
+            providerEntries[i] = map;
+        }
+        m_entries = providerEntries + otherEntries;
+        updateLabels();
+        emit changed();
+    }
+    refresh();
+    return true;
+}
+
+bool DesktopController::setStarredModel(const QString &provider, const QString &label, const QString &key) {
+    QVariantMap starred;
+    starred["provider"] = provider;
+    starred["label"] = label;
+    if (!key.isEmpty()) starred["key"] = key;
+    return saveSettings({{"starredModel", starred}});
+}
+
+bool DesktopController::isStarredModel(const QString &provider, const QString &label, const QString &key) const {
+    const auto starred = m_settings.value("starredModel").toMap();
+    if (starred.isEmpty()) {
+        if (provider == "antigravity" && label.contains("gemini", Qt::CaseInsensitive) && label.contains("weekly", Qt::CaseInsensitive)) {
+            return true;
+        }
+        return false;
+    }
+    if (starred.value("provider").toString() != provider) return false;
+    if (!key.isEmpty() && !starred.value("key").toString().isEmpty()) {
+        if (starred.value("key").toString() == key) return true;
+    }
+    return starred.value("label").toString() == label;
+}
+
+QVariantMap DesktopController::starredModel() const {
+    return m_settings.value("starredModel").toMap();
+}
+
+void DesktopController::refreshAccount(const QString &provider, int accountIndex) {
+    if (m_accountProcess.state() != QProcess::NotRunning || busy()) return;
+    m_refreshingProvider = provider;
+    m_refreshingAccountIndex = accountIndex;
+    emit accountRefreshingChanged();
+
+    auto selection = m_settings;
+    selection["provider"] = provider;
+    selection["accountIndex"] = accountIndex;
+    selection["allAccounts"] = false;
+    auto args = call(m_usageModel, "command", {m_engine.toScriptValue(selection)}).toVariant().toStringList();
+    args = args.mid(3);
+
+    auto output = std::make_shared<QByteArray>();
+    auto complete = std::make_shared<bool>(false);
+    auto *deadline = new QTimer(&m_accountProcess);
+    deadline->setSingleShot(true);
+    connect(deadline, &QTimer::timeout, &m_accountProcess, [this] { stop(m_accountProcess); });
+
+    auto finish = [this, output, complete, deadline, provider, accountIndex](bool failed) {
+        if (*complete) return;
+        *complete = true;
+        deadline->stop();
+        deadline->deleteLater();
+        m_accountProcess.disconnect(this);
+        output->append(m_accountProcess.readAllStandardOutput());
+
+        QJSValueList arguments{QString::fromUtf8(*output), m_settings.value("showIdentity").toBool()};
+        const auto parsed = call(m_usageModel, "rows", arguments);
+        if (!failed && !parsed.isError() && parsed.isArray()) {
+            const auto refreshedList = parsed.toVariant().toList();
+            if (!refreshedList.isEmpty()) {
+                auto newEntryMap = refreshedList.first().toMap();
+                newEntryMap["accountNumber"] = accountIndex;
+
+                bool found = false;
+                for (int i = 0; i < m_entries.size(); ++i) {
+                    auto map = m_entries[i].toMap();
+                    if (map.value("provider").toString() == provider &&
+                        map.value("accountNumber").toInt() == accountIndex) {
+                        m_entries[i] = newEntryMap;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    for (int i = 0; i < m_entries.size(); ++i) {
+                        auto map = m_entries[i].toMap();
+                        if (map.value("provider").toString() == provider) {
+                            m_entries[i] = newEntryMap;
+                            break;
+                        }
+                    }
+                }
+                updateLabels();
+                updateNotifications(m_entries);
+            }
+        }
+        m_refreshingProvider.clear();
+        m_refreshingAccountIndex = 0;
+        emit accountRefreshingChanged();
+        emit changed();
+    };
+
+    connect(&m_accountProcess, &QProcess::readyReadStandardOutput, this, [&, output] {
+        output->append(m_accountProcess.readAllStandardOutput());
+        if (output->size() > 8 * 1024 * 1024) stop(m_accountProcess);
+    });
+    connect(&m_accountProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+        [finish](int code, QProcess::ExitStatus status) {
+            finish(code != 0 || status != QProcess::NormalExit);
+        });
+    connect(&m_accountProcess, &QProcess::errorOccurred, this, [finish] { finish(true); });
+
+    deadline->start(15000);
+    const auto binary = args.takeFirst();
+    m_accountProcess.start(binary, args);
+}
+
+bool DesktopController::isAccountRefreshing(const QString &provider, int accountIndex) const {
+    if (m_refreshingProvider.isEmpty() || m_refreshingAccountIndex == 0) return false;
+    if (accountIndex == 0) return m_refreshingProvider == provider;
+    return m_refreshingProvider == provider && m_refreshingAccountIndex == accountIndex;
+}
+
+int DesktopController::providerAccountCount(const QString &provider) const {
+    int count = 0;
+    for (const auto &entry : m_entries) {
+        if (entry.toMap().value("provider").toString() == provider) ++count;
+    }
+    return count;
 }
