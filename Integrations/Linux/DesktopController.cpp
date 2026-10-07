@@ -99,8 +99,17 @@ bool DesktopController::validate(QVariantMap &values) {
         !QStringList{"meters", "icon"}.contains(values.value("trayStyle").toString())) {
         m_configError = "Unsupported display preference."; return false;
     }
-    for (const auto &key : {"allAccounts", "showIdentity", "showCosts", "showStatus", "notifications", "showTray", "refreshOnOpen", "showPace", "warningColors", "followOmarchyTheme"})
-        values[key] = values.value(key).toBool();
+    for (const auto &key : {"allAccounts", "showIdentity", "showCosts", "showStatus", "notifications", "showTray", "refreshOnOpen", "showPace", "warningColors", "followOmarchyTheme", "sidebarPinned", "sidebarCollapsed", "sidebarHoverBrighten"})
+        if (values.contains(key)) values[key] = values.value(key).toBool();
+    if (values.contains("sidebarOpacity")) {
+        bool ok = false;
+        double op = values.value("sidebarOpacity").toDouble(&ok);
+        if (ok && op >= 0.1 && op <= 1.0) values["sidebarOpacity"] = op;
+    }
+    if (values.contains("sidebarSide")) {
+        const auto side = values.value("sidebarSide").toString();
+        if (side == "left" || side == "right") values["sidebarSide"] = side;
+    }
     if (values.contains("starredModel")) {
         values["starredModel"] = values.value("starredModel").toMap();
     }
@@ -112,7 +121,8 @@ void DesktopController::loadSettings(const QString &cliOverride) {
         {"refreshSeconds", 300}, {"accountIndex", 0}, {"notifyThreshold", 25}, {"allAccounts", false},
         {"showIdentity", false}, {"showCosts", true}, {"showStatus", true}, {"notifications", true}, {"showTray", true}, {"refreshOnOpen", false}, {"providerOrder", QStringList{}},
         {"quotaDisplay", "used"}, {"resetDisplay", "countdown"}, {"showPace", true},
-        {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}, {"starredModel", QVariantMap{{"provider", "antigravity"}, {"label", "Gemini weekly"}}}};
+        {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}, {"starredModel", QVariantMap{{"provider", "antigravity"}, {"label", "Gemini weekly"}}},
+        {"sidebarOpacity", 0.85}, {"sidebarSide", "right"}, {"sidebarPinned", true}, {"sidebarCollapsed", false}, {"sidebarHoverBrighten", true}};
     m_configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/codexbar/linux.json";
     QFile file(m_configPath);
     QVariantMap candidate = m_settings;
@@ -301,7 +311,7 @@ void DesktopController::copySummary() {
 
 void DesktopController::showWindow(const QString &page) {
     if (page == "spending" && QDateTime::currentMSecsSinceEpoch() - m_costUpdated > 300000) refreshCosts();
-    if ((page == "usage" || page == "mini") && m_settings.value("refreshOnOpen").toBool()) refresh();
+    if ((page == "usage" || page == "mini" || page == "sidebar" || page == "dock") && m_settings.value("refreshOnOpen").toBool()) refresh();
     emit windowRequested(page);
 }
 
@@ -396,7 +406,7 @@ bool DesktopController::listen(const QString &socketPath) {
                     refreshAccount(provider, account);
                     response = {{"ok", true}, {"provider", provider}, {"account", account}};
                 }
-                else if (command == "settings" || command == "usage" || command == "spending" || command == "mini") showWindow(command);
+                else if (command == "settings" || command == "usage" || command == "spending" || command == "mini" || command == "sidebar" || command == "dock") showWindow(command);
                 else if (command == "configure" && request.value("settings").isObject()) {
                     const bool ok = saveSettings(request.value("settings").toObject().toVariantMap());
                     response = {{"ok", ok}, {"error", m_configError}};
