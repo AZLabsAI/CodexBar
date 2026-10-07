@@ -101,7 +101,7 @@ ApplicationWindow {
                             Label { text: "Account (0 = default)"; Layout.fillWidth: true; wrapMode: Text.Wrap }
                             SpinBox { enabled: !allAccounts.checked && ["custom", "both", "all", "enabled"].indexOf(provider.editText) < 0; id: account; from: 0; to: 999; editable: true }
                         }
-                        Option { enabled: ["custom", "both", "all", "enabled"].indexOf(provider.editText) < 0; id: allAccounts; text: "All accounts" }
+                        Option { id: allAccounts; text: "All accounts" }
                         Option { id: identity; text: "Show account identity" }
                         RowLayout {
                             Layout.fillWidth: true

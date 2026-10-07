@@ -23,6 +23,14 @@ ApplicationWindow {
     property string selectedProviderFilter: "all"
     property color rootAccent: palette.highlight
 
+    readonly property var visibleEntries: {
+        if (!desktop || !desktop.entries) return [];
+        if (selectedProviderFilter === "all") return desktop.entries;
+        return desktop.entries.filter(function(e) {
+            return e.provider === selectedProviderFilter;
+        });
+    }
+
     // Dimensions
     width: isCollapsed ? 36 : 240
     height: Math.min(680, Math.max(480, (Screen.desktopAvailableHeight || Screen.height || 900) - 80))
@@ -454,13 +462,7 @@ ApplicationWindow {
                     spacing: 10
 
                     Repeater {
-                        model: {
-                            if (!desktop || !desktop.entries) return [];
-                            if (window.selectedProviderFilter === "all") return desktop.entries;
-                            return desktop.entries.filter(function(e) {
-                                return e.provider === window.selectedProviderFilter;
-                            });
-                        }
+                        model: window.visibleEntries
 
                         ColumnLayout {
                             id: entryCardDelegate
@@ -476,8 +478,7 @@ ApplicationWindow {
                                 height: 2
                                 radius: 1
                                 color: {
-                                    var entries = desktop ? desktop.entries : [];
-                                    var prev = entries[index - 1];
+                                    var prev = window.visibleEntries[index - 1];
                                     if (prev && prev.provider === modelData.provider) {
                                         return palette.highlight;
                                     }

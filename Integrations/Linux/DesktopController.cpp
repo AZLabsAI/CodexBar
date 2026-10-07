@@ -118,7 +118,7 @@ bool DesktopController::validate(QVariantMap &values) {
 
 void DesktopController::loadSettings(const QString &cliOverride) {
     m_settings = {{"executable", "codexbar"}, {"provider", "codex"}, {"source", "auto"},
-        {"refreshSeconds", 300}, {"accountIndex", 0}, {"notifyThreshold", 25}, {"allAccounts", false},
+        {"refreshSeconds", 300}, {"accountIndex", 0}, {"notifyThreshold", 25}, {"allAccounts", true},
         {"showIdentity", false}, {"showCosts", true}, {"showStatus", true}, {"notifications", true}, {"showTray", true}, {"refreshOnOpen", false}, {"providerOrder", QStringList{}},
         {"quotaDisplay", "used"}, {"resetDisplay", "countdown"}, {"showPace", true},
         {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}, {"starredModel", QVariantMap{{"provider", "antigravity"}, {"label", "Gemini weekly"}}},
@@ -616,7 +616,7 @@ void DesktopController::refreshAccount(const QString &provider, int accountIndex
     auto selection = m_settings;
     selection["provider"] = provider;
     selection["accountIndex"] = accountIndex;
-    selection["allAccounts"] = false;
+    selection["allAccounts"] = (provider == "codex" || provider == "antigravity");
     auto args = call(m_usageModel, "command", {m_engine.toScriptValue(selection)}).toVariant().toStringList();
     args = args.mid(3);
 
@@ -639,25 +639,41 @@ void DesktopController::refreshAccount(const QString &provider, int accountIndex
         if (!failed && !parsed.isError() && parsed.isArray()) {
             const auto refreshedList = parsed.toVariant().toList();
             if (!refreshedList.isEmpty()) {
-                auto newEntryMap = refreshedList.first().toMap();
-                newEntryMap["accountNumber"] = accountIndex;
-
-                bool found = false;
-                for (int i = 0; i < m_entries.size(); ++i) {
-                    auto map = m_entries[i].toMap();
-                    if (map.value("provider").toString() == provider &&
-                        map.value("accountNumber").toInt() == accountIndex) {
-                        m_entries[i] = newEntryMap;
-                        found = true;
-                        break;
+                if (provider == "codex" || provider == "antigravity") {
+                    for (int r = 0; r < refreshedList.size(); ++r) {
+                        auto refreshedMap = refreshedList[r].toMap();
+                        int accNum = r + 1;
+                        refreshedMap["accountNumber"] = accNum;
+                        for (int i = 0; i < m_entries.size(); ++i) {
+                            auto map = m_entries[i].toMap();
+                            if (map.value("provider").toString() == provider &&
+                                map.value("accountNumber").toInt() == accNum) {
+                                m_entries[i] = refreshedMap;
+                                break;
+                            }
+                        }
                     }
-                }
-                if (!found) {
+                } else {
+                    auto newEntryMap = refreshedList.first().toMap();
+                    newEntryMap["accountNumber"] = accountIndex;
+
+                    bool found = false;
                     for (int i = 0; i < m_entries.size(); ++i) {
                         auto map = m_entries[i].toMap();
-                        if (map.value("provider").toString() == provider) {
+                        if (map.value("provider").toString() == provider &&
+                            map.value("accountNumber").toInt() == accountIndex) {
                             m_entries[i] = newEntryMap;
+                            found = true;
                             break;
+                        }
+                    }
+                    if (!found) {
+                        for (int i = 0; i < m_entries.size(); ++i) {
+                            auto map = m_entries[i].toMap();
+                            if (map.value("provider").toString() == provider) {
+                                m_entries[i] = newEntryMap;
+                                break;
+                            }
                         }
                     }
                 }
