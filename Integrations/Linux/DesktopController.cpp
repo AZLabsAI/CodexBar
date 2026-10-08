@@ -101,14 +101,23 @@ bool DesktopController::validate(QVariantMap &values) {
     }
     for (const auto &key : {"allAccounts", "showIdentity", "showCosts", "showStatus", "notifications", "showTray", "refreshOnOpen", "showPace", "warningColors", "followOmarchyTheme", "sidebarPinned", "sidebarCollapsed", "sidebarHoverBrighten"})
         if (values.contains(key)) values[key] = values.value(key).toBool();
-    if (values.contains("sidebarOpacity")) {
-        bool ok = false;
-        double op = values.value("sidebarOpacity").toDouble(&ok);
-        if (ok && op >= 0.1 && op <= 1.0) values["sidebarOpacity"] = op;
+    for (const auto &key : {"sidebarOpacity", "windowOpacity", "miniOpacity"}) {
+        if (values.contains(key)) {
+            bool ok = false;
+            double op = values.value(key).toDouble(&ok);
+            if (ok && op >= 0.20 && op <= 1.0) values[key] = op;
+        }
     }
     if (values.contains("sidebarSide")) {
         const auto side = values.value("sidebarSide").toString();
         if (side == "left" || side == "right") values["sidebarSide"] = side;
+    }
+    if (values.contains("themeMode")) {
+        const auto mode = values.value("themeMode").toString();
+        if (QStringList{"dark", "light", "system"}.contains(mode)) values["themeMode"] = mode;
+    }
+    if (values.contains("accentColor")) {
+        values["accentColor"] = values.value("accentColor").toString();
     }
     if (values.contains("starredModel")) {
         values["starredModel"] = values.value("starredModel").toMap();
@@ -122,7 +131,8 @@ void DesktopController::loadSettings(const QString &cliOverride) {
         {"showIdentity", false}, {"showCosts", true}, {"showStatus", true}, {"notifications", true}, {"showTray", true}, {"refreshOnOpen", false}, {"providerOrder", QStringList{}},
         {"quotaDisplay", "used"}, {"resetDisplay", "countdown"}, {"showPace", true},
         {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}, {"starredModel", QVariantMap{{"provider", "antigravity"}, {"label", "Gemini weekly"}}},
-        {"sidebarOpacity", 0.85}, {"sidebarSide", "right"}, {"sidebarPinned", true}, {"sidebarCollapsed", false}, {"sidebarHoverBrighten", true}};
+        {"sidebarOpacity", 0.85}, {"sidebarSide", "right"}, {"sidebarPinned", true}, {"sidebarCollapsed", false}, {"sidebarHoverBrighten", true},
+        {"themeMode", "dark"}, {"accentColor", "violet"}, {"windowOpacity", 0.95}, {"miniOpacity", 0.90}};
     m_configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/codexbar/linux.json";
     QFile file(m_configPath);
     QVariantMap candidate = m_settings;
@@ -307,6 +317,19 @@ void DesktopController::updateNotifications(const QVariantList &entries) {
 
 void DesktopController::copySummary() {
     QGuiApplication::clipboard()->setText(call(m_noticeModel, "summary", {m_engine.toScriptValue(m_entries)}).toString());
+}
+
+QString DesktopController::resolvedAccentHex() const {
+    const QString accent = m_settings.value("accentColor", "violet").toString();
+    if (accent == "violet") return "#8b5cf6";
+    if (accent == "blue") return "#3b82f6";
+    if (accent == "cyan") return "#06b6d4";
+    if (accent == "emerald") return "#10b981";
+    if (accent == "orange") return "#f97316";
+    if (accent == "rose") return "#f43f5e";
+    if (accent == "amber") return "#f59e0b";
+    if (accent.startsWith("#") && QColor::isValidColorName(accent)) return accent;
+    return "#8b5cf6";
 }
 
 void DesktopController::showWindow(const QString &page) {

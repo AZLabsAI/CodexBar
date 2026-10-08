@@ -61,6 +61,7 @@ public:
     Q_INVOKABLE int cursorY() const;
     Q_INVOKABLE bool saveSettings(const QVariantMap &changes);
     Q_INVOKABLE void copySummary();
+    Q_INVOKABLE QString resolvedAccentHex() const;
     QJsonObject snapshot() const;
 
 signals:

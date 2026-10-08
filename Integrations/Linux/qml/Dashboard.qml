@@ -8,6 +8,7 @@ ApplicationWindow {
     title: "Usage & Spend"
     width: 820; height: 700
     minimumWidth: 480; minimumHeight: 420
+    opacity: desktop && desktop.settings && desktop.settings.windowOpacity !== undefined ? Number(desktop.settings.windowOpacity) : 0.95
     property int selectedTab: 0
     readonly property bool refreshing: selectedTab === 0 ? desktop.busy : desktop.costBusy
     function refreshCurrent() {
@@ -111,6 +112,12 @@ ApplicationWindow {
                     Frame {
                         required property var modelData
                         Layout.fillWidth: true; padding: 14
+                        background: Rectangle {
+                            color: palette.base
+                            radius: 10
+                            border.color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.12)
+                            border.width: 1
+                        }
                         ColumnLayout {
                             width: parent.width; spacing: 12
                             Label { text: Usage.providerName(modelData.provider); font.pixelSize: 18; font.bold: true }

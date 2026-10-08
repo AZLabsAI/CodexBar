@@ -10,6 +10,12 @@ Frame {
     padding: 14
     Layout.fillWidth: true
     implicitHeight: content.implicitHeight + topPadding + bottomPadding
+    background: Rectangle {
+        color: palette.base
+        radius: 10
+        border.color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.12)
+        border.width: 1
+    }
     ColumnLayout {
         id: content
         width: parent.width
@@ -27,7 +33,25 @@ Frame {
                 fillMode: Image.PreserveAspectFit
             }
             Label { text: Usage.providerName(root.entry.provider); font.bold: true; font.pixelSize: 18; Layout.fillWidth: true; wrapMode: Text.Wrap }
-            Label { text: root.entry.plan || ""; opacity: 0.65; Layout.maximumWidth: root.width / 2; wrapMode: Text.Wrap; textFormat: Text.PlainText }
+            Rectangle {
+                visible: (root.entry.plan || "") !== ""
+                color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12)
+                border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.35)
+                border.width: 1
+                radius: 10
+                implicitHeight: 22
+                implicitWidth: planText.implicitWidth + 14
+                Label {
+                    id: planText
+                    anchors.centerIn: parent
+                    text: root.entry.plan || ""
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: root.accent
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
+                }
+            }
         }
         RowLayout {
             Layout.fillWidth: true
@@ -161,12 +185,12 @@ Frame {
                         contentItem: Text {
                             text: cardStarBtn.text
                             font.pixelSize: 13
-                            color: cardStarBtn.isStarred ? "#f59e0b" : Qt.rgba(1, 1, 1, 0.4)
+                            color: cardStarBtn.isStarred ? "#f59e0b" : Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.35)
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
                         background: Rectangle {
-                            color: cardStarBtn.hovered ? Qt.rgba(1, 1, 1, 0.1) : "transparent"
+                            color: cardStarBtn.hovered ? Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.08) : "transparent"
                             radius: 4
                         }
                         ToolTip.visible: hovered

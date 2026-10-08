@@ -110,7 +110,21 @@ int main(int argc, char **argv) {
         if (!themeApplied) systemPalette = app.palette();
         QPalette palette = systemPalette;
         themeApplied = false;
-        if (controller.settings().value("followOmarchyTheme").toBool()) {
+
+        const auto settings = controller.settings();
+        const QString themeMode = settings.value("themeMode", "dark").toString();
+        const QColor accentColor(controller.resolvedAccentHex());
+
+        bool isDark = true;
+        if (themeMode == "light") {
+            isDark = false;
+        } else if (themeMode == "dark") {
+            isDark = true;
+        } else {
+            isDark = (systemPalette.color(QPalette::Window).lightness() < 128);
+        }
+
+        if (settings.value("followOmarchyTheme").toBool()) {
             const auto state = qEnvironmentVariable("XDG_STATE_HOME", QDir::homePath() + "/.local/state");
             QFile file(state + "/omarchy/current/theme/colors.toml");
             if (file.open(QIODevice::ReadOnly) && file.size() <= 65536) {
@@ -130,6 +144,55 @@ int main(int argc, char **argv) {
                     for (const auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
                         palette.setColor(QPalette::Disabled, role, colors.value("dark_foreground", foreground.darker(150)));
                 }
+            }
+        }
+
+        if (!themeApplied) {
+            themeApplied = true;
+            if (isDark) {
+                const QColor bg("#121316");
+                const QColor surface("#1a1b20");
+                const QColor altSurface("#22232a");
+                const QColor fg("#f8fafc");
+                const QColor disabledFg("#64748b");
+                const QColor midColor("#2d2f38");
+
+                palette.setColor(QPalette::Window, bg);
+                palette.setColor(QPalette::Base, surface);
+                palette.setColor(QPalette::AlternateBase, altSurface);
+                palette.setColor(QPalette::Button, surface);
+                palette.setColor(QPalette::WindowText, fg);
+                palette.setColor(QPalette::Text, fg);
+                palette.setColor(QPalette::ButtonText, fg);
+                palette.setColor(QPalette::ToolTipBase, surface);
+                palette.setColor(QPalette::ToolTipText, fg);
+                palette.setColor(QPalette::Mid, midColor);
+                palette.setColor(QPalette::Highlight, accentColor);
+                palette.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+                for (const auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
+                    palette.setColor(QPalette::Disabled, role, disabledFg);
+            } else {
+                const QColor bg("#f8fafc");
+                const QColor surface("#ffffff");
+                const QColor altSurface("#f1f5f9");
+                const QColor fg("#0f172a");
+                const QColor disabledFg("#94a3b8");
+                const QColor midColor("#e2e8f0");
+
+                palette.setColor(QPalette::Window, bg);
+                palette.setColor(QPalette::Base, surface);
+                palette.setColor(QPalette::AlternateBase, altSurface);
+                palette.setColor(QPalette::Button, altSurface);
+                palette.setColor(QPalette::WindowText, fg);
+                palette.setColor(QPalette::Text, fg);
+                palette.setColor(QPalette::ButtonText, fg);
+                palette.setColor(QPalette::ToolTipBase, QColor("#1e293b"));
+                palette.setColor(QPalette::ToolTipText, QColor("#f8fafc"));
+                palette.setColor(QPalette::Mid, midColor);
+                palette.setColor(QPalette::Highlight, accentColor);
+                palette.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+                for (const auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
+                    palette.setColor(QPalette::Disabled, role, disabledFg);
             }
         }
         if (app.palette() != palette) app.setPalette(palette);

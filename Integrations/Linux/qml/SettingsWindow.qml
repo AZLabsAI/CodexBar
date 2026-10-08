@@ -6,11 +6,13 @@ import "../Shared/Usage.js" as Usage
 ApplicationWindow {
     id: window
     title: "Settings"
-    width: 680; height: 720
-    minimumWidth: 500; minimumHeight: 480
+    width: 720; height: 740
+    minimumWidth: 540; minimumHeight: 520
     property string feedback: ""
     property int section: 0
     property var providerOrder: []
+    property string currentAccent: "violet"
+
     function moveProvider(index, offset) {
         var order = providerOrder.slice();
         var item = order.splice(index, 1)[0]; order.splice(index + offset, 0, item);
@@ -18,6 +20,7 @@ ApplicationWindow {
     }
     onClosing: function(event) { event.accepted = false; hide(); }
     onVisibleChanged: if (visible) load()
+
     function load() {
         var s = desktop.settings;
         provider.editText = s.provider; source.currentIndex = source.model.indexOf(s.source);
@@ -30,30 +33,426 @@ ApplicationWindow {
         trayStyle.currentIndex = trayStyle.model.indexOf(s.trayStyle);
         theme.checked = s.followOmarchyTheme; pace.checked = s.showPace; warnings.checked = s.warningColors;
         refreshOnOpen.checked = s.refreshOnOpen;
-        tray.checked = s.showTray; executable.text = s.executable; feedback = "";
+        tray.checked = s.showTray; executable.text = s.executable;
+
+        // Appearance settings
+        var tMode = s.themeMode || "dark";
+        for (var i = 0; i < themeModeCombo.model.length; ++i) {
+            if (themeModeCombo.model[i].value === tMode) {
+                themeModeCombo.currentIndex = i;
+                break;
+            }
+        }
+        currentAccent = s.accentColor || "violet";
+        customAccentInput.text = currentAccent.startsWith("#") ? currentAccent : "";
+        windowOpacitySlider.value = s.windowOpacity !== undefined ? Number(s.windowOpacity) : 0.95;
+        miniOpacitySlider.value = s.miniOpacity !== undefined ? Number(s.miniOpacity) : 0.90;
+        dockOpacitySlider.value = s.sidebarOpacity !== undefined ? Number(s.sidebarOpacity) : 0.85;
+        dockHoverBrighten.checked = s.sidebarHoverBrighten !== undefined ? s.sidebarHoverBrighten : true;
+
+        feedback = "";
     }
+
     Shortcut { sequence: "Escape"; onActivated: window.hide() }
     header: ToolBar {
         Label { anchors.left: parent.left; anchors.leftMargin: 24; anchors.verticalCenter: parent.verticalCenter; text: "Settings"; font.pixelSize: 22; font.bold: true }
         implicitHeight: 64
     }
+
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 16; spacing: 12
         TabBar {
+            id: tabBar
             Layout.fillWidth: true
             currentIndex: window.section
             TabButton { text: "General"; onClicked: window.section = 0 }
-            TabButton { text: "Providers"; onClicked: window.section = 1 }
-            TabButton { text: "Advanced"; onClicked: window.section = 2 }
+            TabButton { text: "Appearance"; onClicked: window.section = 1 }
+            TabButton { text: "Providers"; onClicked: window.section = 2 }
+            TabButton { text: "Advanced"; onClicked: window.section = 3 }
         }
+
         ScrollView {
             id: scroll
             Layout.fillWidth: true; Layout.fillHeight: true
             contentWidth: availableWidth; clip: true
+
             ColumnLayout {
                 width: scroll.availableWidth; spacing: 20
+
+                // ==========================================
+                // SECTION 0: GENERAL
+                // ==========================================
                 GroupBox {
-                    title: "Provider"; Layout.fillWidth: true; visible: window.section === 1
+                    title: "Updates"; Layout.fillWidth: true; visible: window.section === 0
+                    ColumnLayout {
+                        anchors.fill: parent; spacing: 10
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Label { text: "Refresh every (seconds)"; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                            SpinBox { id: interval; from: 60; to: 3600; stepSize: 60; editable: true }
+                        }
+                        Option { id: refreshOnOpen; text: "Refresh when opening usage" }
+                        Option { id: notices; text: "Notify about low quota, resets, and outages" }
+                        RowLayout {
+                            Layout.fillWidth: true; enabled: notices.checked
+                            Label { text: "Remaining quota threshold (%)"; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                            SpinBox { id: threshold; from: 1; to: 99; editable: true }
+                        }
+                        Option { id: status; text: "Service status" }
+                    }
+                }
+
+                GroupBox {
+                    title: "Desktop"; Layout.fillWidth: true; visible: window.section === 0
+                    ColumnLayout {
+                        anchors.fill: parent; spacing: 10
+                        Button {
+                            text: desktop.launchAtLogin ? "Disable start at login" : "Enable start at login"
+                            onClicked: desktop.setLaunchAtLogin(!desktop.launchAtLogin)
+                        }
+                        Option { id: tray; text: "Tray icon" }
+                        Label { text: "Optional with the Omarchy widget. CodexBar is also available in the application launcher."; Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.65 }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Label { text: "Tray style"; Layout.fillWidth: true }
+                            ComboBox { id: trayStyle; model: ["meters", "icon"] }
+                        }
+                        Option { id: costs; text: "Local spending" }
+                    }
+                }
+
+                GroupBox {
+                    title: "Display Preferences"; Layout.fillWidth: true; visible: window.section === 0
+                    ColumnLayout {
+                        anchors.fill: parent; spacing: 10
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Label { text: "Quota"; Layout.fillWidth: true }
+                            ComboBox { id: quota; model: ["remaining", "used"] }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Label { text: "Reset time"; Layout.fillWidth: true }
+                            ComboBox { id: reset; model: ["countdown", "absolute", "both"] }
+                        }
+                        Option { id: pace; text: "Show pace" }
+                        Option { id: warnings; text: "Highlight low quota" }
+                    }
+                }
+
+                // ==========================================
+                // SECTION 1: APPEARANCE
+                // ==========================================
+                GroupBox {
+                    title: "Theme Mode"
+                    Layout.fillWidth: true
+                    visible: window.section === 1
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 10
+
+                        Label {
+                            text: "Select your preferred color scheme:"
+                            opacity: 0.7
+                            font.pixelSize: 12
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            ComboBox {
+                                id: themeModeCombo
+                                Layout.fillWidth: true
+                                model: [
+                                    { text: "Dark Mode 🌙", value: "dark", desc: "Deep carbon palette (#121316) for low-light focus" },
+                                    { text: "Light Mode ☀️", value: "light", desc: "Clean daylight palette (#f8fafc) with crisp contrast" },
+                                    { text: "System Default 💻", value: "system", desc: "Automatically match system desktop luminance" }
+                                ]
+                                textRole: "text"
+                                valueRole: "value"
+                            }
+                        }
+
+                        Label {
+                            text: themeModeCombo.model[themeModeCombo.currentIndex] ? themeModeCombo.model[themeModeCombo.currentIndex].desc : ""
+                            opacity: 0.65
+                            font.pixelSize: 12
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+
+                        Option {
+                            id: theme
+                            text: "Follow Omarchy desktop theme colors (when available)"
+                        }
+                    }
+                }
+
+                GroupBox {
+                    title: "Accent Colors"
+                    Layout.fillWidth: true
+                    visible: window.section === 1
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 12
+
+                        Label {
+                            text: "Select a curated accent or specify a custom hex code:"
+                            opacity: 0.7
+                            font.pixelSize: 12
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Repeater {
+                                model: [
+                                    { name: "violet", hex: "#8b5cf6", title: "Violet" },
+                                    { name: "blue", hex: "#3b82f6", title: "Blue" },
+                                    { name: "cyan", hex: "#06b6d4", title: "Cyan" },
+                                    { name: "emerald", hex: "#10b981", title: "Emerald" },
+                                    { name: "orange", hex: "#f97316", title: "Orange" },
+                                    { name: "rose", hex: "#f43f5e", title: "Rose" },
+                                    { name: "amber", hex: "#f59e0b", title: "Amber" }
+                                ]
+
+                                Rectangle {
+                                    id: swatch
+                                    required property var modelData
+                                    width: 34; height: 34
+                                    radius: 17
+                                    color: modelData.hex
+                                    border.color: (window.currentAccent === modelData.name || window.currentAccent.toLowerCase() === modelData.hex.toLowerCase()) ? palette.text : Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.25)
+                                    border.width: (window.currentAccent === modelData.name || window.currentAccent.toLowerCase() === modelData.hex.toLowerCase()) ? 3 : 1
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "✓"
+                                        font.pixelSize: 14
+                                        font.bold: true
+                                        color: "#ffffff"
+                                        visible: (window.currentAccent === swatch.modelData.name || window.currentAccent.toLowerCase() === swatch.modelData.hex.toLowerCase())
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            window.currentAccent = swatch.modelData.name;
+                                            customAccentInput.text = "";
+                                        }
+                                    }
+
+                                    ToolTip.visible: swatchHover.hovered
+                                    ToolTip.text: modelData.title + " (" + modelData.hex + ")"
+                                    HoverHandler { id: swatchHover }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Label {
+                                text: "Custom Hex:"
+                                font.pixelSize: 12
+                            }
+
+                            TextField {
+                                id: customAccentInput
+                                Layout.preferredWidth: 140
+                                placeholderText: "#8b5cf6"
+                                selectByMouse: true
+                                validator: RegularExpressionValidator { regularExpression: /^#?[0-9a-fA-F]{6}$/ }
+                                onTextChanged: {
+                                    var txt = text.trim();
+                                    if (txt.length === 6 && !txt.startsWith("#")) txt = "#" + txt;
+                                    if (txt.length === 7 && txt.startsWith("#")) {
+                                        window.currentAccent = txt;
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 28; height: 28; radius: 6
+                                color: {
+                                    var txt = customAccentInput.text.trim();
+                                    if (txt.length === 6 && !txt.startsWith("#")) txt = "#" + txt;
+                                    return (txt.startsWith("#") && txt.length === 7) ? txt : "transparent";
+                                }
+                                border.color: palette.mid
+                                border.width: 1
+                                visible: customAccentInput.text.trim() !== ""
+                            }
+
+                            Label {
+                                text: "Type any valid 6-digit hex code"
+                                opacity: 0.6
+                                font.pixelSize: 11
+                                Layout.fillWidth: true
+                            }
+                        }
+                    }
+                }
+
+                GroupBox {
+                    title: "Surfaces & Transparencies"
+                    Layout.fillWidth: true
+                    visible: window.section === 1
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 14
+
+                        Label {
+                            text: "Adjust surface opacity and window background translucency:"
+                            opacity: 0.7
+                            font.pixelSize: 12
+                        }
+
+                        // 1. Dashboard Window Opacity
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label {
+                                    text: "Main Dashboard Opacity: " + Math.round(windowOpacitySlider.value * 100) + "%"
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
+                                RowLayout {
+                                    spacing: 4
+                                    Button {
+                                        text: "Solid (100%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: windowOpacitySlider.value = 1.00
+                                    }
+                                    Button {
+                                        text: "Glass (95%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: windowOpacitySlider.value = 0.95
+                                    }
+                                    Button {
+                                        text: "Acrylic (85%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: windowOpacitySlider.value = 0.85
+                                    }
+                                }
+                            }
+
+                            Slider {
+                                id: windowOpacitySlider
+                                Layout.fillWidth: true
+                                from: 0.20; to: 1.00; stepSize: 0.05
+                            }
+                        }
+
+                        // 2. Mini Window Opacity
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label {
+                                    text: "Mini Quota Bar Opacity: " + Math.round(miniOpacitySlider.value * 100) + "%"
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
+                                RowLayout {
+                                    spacing: 4
+                                    Button {
+                                        text: "Solid (100%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: miniOpacitySlider.value = 1.00
+                                    }
+                                    Button {
+                                        text: "Glass (90%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: miniOpacitySlider.value = 0.90
+                                    }
+                                    Button {
+                                        text: "Acrylic (75%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: miniOpacitySlider.value = 0.75
+                                    }
+                                }
+                            }
+
+                            Slider {
+                                id: miniOpacitySlider
+                                Layout.fillWidth: true
+                                from: 0.20; to: 1.00; stepSize: 0.05
+                            }
+                        }
+
+                        // 3. Side Dock Bar Opacity
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label {
+                                    text: "Side Dock Bar Opacity: " + Math.round(dockOpacitySlider.value * 100) + "%"
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
+                                RowLayout {
+                                    spacing: 4
+                                    Button {
+                                        text: "Solid (100%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: dockOpacitySlider.value = 1.00
+                                    }
+                                    Button {
+                                        text: "Dock (85%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: dockOpacitySlider.value = 0.85
+                                    }
+                                    Button {
+                                        text: "Subtle (65%)"
+                                        font.pixelSize: 10
+                                        Layout.preferredHeight: 24
+                                        onClicked: dockOpacitySlider.value = 0.65
+                                    }
+                                }
+                            }
+
+                            Slider {
+                                id: dockOpacitySlider
+                                Layout.fillWidth: true
+                                from: 0.20; to: 1.00; stepSize: 0.05
+                            }
+                        }
+
+                        Option {
+                            id: dockHoverBrighten
+                            text: "Brighten side dock on mouse hover"
+                        }
+                    }
+                }
+
+                // ==========================================
+                // SECTION 2: PROVIDERS
+                // ==========================================
+                GroupBox {
+                    title: "Provider"; Layout.fillWidth: true; visible: window.section === 2
                     ColumnLayout {
                         anchors.fill: parent; spacing: 10
                         Label { text: "Provider" }
@@ -112,64 +511,12 @@ ApplicationWindow {
                         Label { text: "Sign-in opens your provider CLI in a terminal. Account selection above only changes displayed usage."; Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.65 }
                     }
                 }
+
+                // ==========================================
+                // SECTION 3: ADVANCED
+                // ==========================================
                 GroupBox {
-                    title: "Updates"; Layout.fillWidth: true; visible: window.section === 0
-                    ColumnLayout {
-                        anchors.fill: parent; spacing: 10
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Label { text: "Refresh every (seconds)"; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                            SpinBox { id: interval; from: 60; to: 3600; stepSize: 60; editable: true }
-                        }
-                        Option { id: refreshOnOpen; text: "Refresh when opening usage" }
-                        Option { id: notices; text: "Notify about low quota, resets, and outages" }
-                        RowLayout {
-                            Layout.fillWidth: true; enabled: notices.checked
-                            Label { text: "Remaining quota threshold (%)"; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                            SpinBox { id: threshold; from: 1; to: 99; editable: true }
-                        }
-                        Option { id: status; text: "Service status" }
-                    }
-                }
-                GroupBox {
-                    title: "Desktop"; Layout.fillWidth: true; visible: window.section === 0
-                    ColumnLayout {
-                        anchors.fill: parent; spacing: 10
-                        Button {
-                            text: desktop.launchAtLogin ? "Disable start at login" : "Enable start at login"
-                            onClicked: desktop.setLaunchAtLogin(!desktop.launchAtLogin)
-                        }
-                        Option { id: tray; text: "Tray icon" }
-                        Label { text: "Optional with the Omarchy widget. CodexBar is also available in the application launcher."; Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.65 }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Label { text: "Tray style"; Layout.fillWidth: true }
-                            ComboBox { id: trayStyle; model: ["meters", "icon"] }
-                        }
-                        Option { id: costs; text: "Local spending" }
-                    }
-                }
-                GroupBox {
-                    title: "Display"; Layout.fillWidth: true; visible: window.section === 0
-                    ColumnLayout {
-                        anchors.fill: parent; spacing: 10
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Label { text: "Quota"; Layout.fillWidth: true }
-                            ComboBox { id: quota; model: ["remaining", "used"] }
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Label { text: "Reset time"; Layout.fillWidth: true }
-                            ComboBox { id: reset; model: ["countdown", "absolute", "both"] }
-                        }
-                        Option { id: theme; text: "Follow Omarchy theme colors" }
-                        Option { id: pace; text: "Show pace" }
-                        Option { id: warnings; text: "Highlight low quota" }
-                    }
-                }
-                GroupBox {
-                    title: "CLI"; Layout.fillWidth: true; visible: window.section === 2
+                    title: "CLI"; Layout.fillWidth: true; visible: window.section === 3
                     ColumnLayout {
                         anchors.fill: parent; spacing: 10
                         Label { text: "Executable" }
@@ -178,7 +525,9 @@ ApplicationWindow {
                 }
             }
         }
+
         Label { text: desktop.configError || window.feedback; visible: text !== ""; Layout.fillWidth: true; wrapMode: Text.Wrap }
+
         RowLayout {
             Layout.fillWidth: true
             Label { text: "Closing windows keeps CodexBar running."; Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.65; font.pixelSize: 12 }
@@ -186,17 +535,46 @@ ApplicationWindow {
             Button {
                 text: "Save"; highlighted: true
                 onClicked: {
-                    if (desktop.saveSettings({provider: provider.editText.trim(), source: source.currentText,
-                        accountIndex: account.value, allAccounts: allAccounts.checked, showIdentity: identity.checked,
-                        showCosts: costs.checked, showStatus: status.checked, notifications: notices.checked,
-                        notifyThreshold: threshold.value, refreshSeconds: interval.value,
-                        providerOrder: window.providerOrder, quotaDisplay: quota.currentText, resetDisplay: reset.currentText,
-                        followOmarchyTheme: theme.checked, showPace: pace.checked, warningColors: warnings.checked, trayStyle: trayStyle.currentText,
-                        refreshOnOpen: refreshOnOpen.checked, showTray: tray.checked, executable: executable.text.trim()})) window.feedback = "Settings saved";
+                    var resolvedAccent = window.currentAccent;
+                    var customTxt = customAccentInput.text.trim();
+                    if (customTxt.length === 6 && !customTxt.startsWith("#")) customTxt = "#" + customTxt;
+                    if (customTxt.startsWith("#") && customTxt.length === 7) resolvedAccent = customTxt;
+
+                    if (desktop.saveSettings({
+                        provider: provider.editText.trim(),
+                        source: source.currentText,
+                        accountIndex: account.value,
+                        allAccounts: allAccounts.checked,
+                        showIdentity: identity.checked,
+                        showCosts: costs.checked,
+                        showStatus: status.checked,
+                        notifications: notices.checked,
+                        notifyThreshold: threshold.value,
+                        refreshSeconds: interval.value,
+                        providerOrder: window.providerOrder,
+                        quotaDisplay: quota.currentText,
+                        resetDisplay: reset.currentText,
+                        followOmarchyTheme: theme.checked,
+                        showPace: pace.checked,
+                        warningColors: warnings.checked,
+                        trayStyle: trayStyle.currentText,
+                        refreshOnOpen: refreshOnOpen.checked,
+                        showTray: tray.checked,
+                        executable: executable.text.trim(),
+                        themeMode: themeModeCombo.model[themeModeCombo.currentIndex].value,
+                        accentColor: resolvedAccent,
+                        windowOpacity: Math.round(windowOpacitySlider.value * 100) / 100,
+                        miniOpacity: Math.round(miniOpacitySlider.value * 100) / 100,
+                        sidebarOpacity: Math.round(dockOpacitySlider.value * 100) / 100,
+                        sidebarHoverBrighten: dockHoverBrighten.checked
+                    })) {
+                        window.feedback = "Settings saved successfully";
+                    }
                 }
             }
         }
     }
+
     Dialog {
         id: signOut
         title: "Sign out of " + loginProvider.currentText + "?"
@@ -206,6 +584,7 @@ ApplicationWindow {
         Label { text: "This signs out the provider CLI on this machine."; wrapMode: Text.Wrap; width: Math.min(window.width - 80, 350) }
         onAccepted: desktop.accountAction(loginProvider.currentText, "logout")
     }
+
     component Option: CheckBox {
         Layout.fillWidth: true
         contentItem: Text {

@@ -671,7 +671,7 @@ ApplicationWindow {
                                                     contentItem: Text {
                                                         text: sideStarBtn.text
                                                         font.pixelSize: 10
-                                                        color: sideStarBtn.isStarred ? "#f59e0b" : Qt.rgba(1, 1, 1, 0.3)
+                                                        color: sideStarBtn.isStarred ? "#f59e0b" : Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.35)
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }

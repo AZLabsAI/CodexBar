@@ -134,6 +134,7 @@ ApplicationWindow {
         color: palette.window
         border.color: palette.mid
         border.width: 1
+        opacity: desktop && desktop.settings && desktop.settings.miniOpacity !== undefined ? Number(desktop.settings.miniOpacity) : 0.90
 
         ColumnLayout {
             anchors.fill: parent
@@ -188,6 +189,12 @@ ApplicationWindow {
                 id: accountNavCard
                 Layout.fillWidth: true
                 padding: 10
+                background: Rectangle {
+                    color: palette.base
+                    radius: 8
+                    border.color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.12)
+                    border.width: 1
+                }
 
                 ColumnLayout {
                     width: parent.width
@@ -283,7 +290,7 @@ ApplicationWindow {
                                             verticalAlignment: Text.AlignVCenter
                                         }
                                         background: Rectangle {
-                                            color: miniAccRefreshBtn.hovered ? Qt.rgba(1, 1, 1, 0.1) : "transparent"
+                                            color: miniAccRefreshBtn.hovered ? Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.08) : "transparent"
                                             radius: 4
                                         }
                                         ToolTip.visible: hovered
@@ -499,12 +506,12 @@ ApplicationWindow {
                                     contentItem: Text {
                                         text: starBtn.text
                                         font.pixelSize: 13
-                                        color: starBtn.isStarred ? "#f59e0b" : Qt.rgba(1, 1, 1, 0.4)
+                                        color: starBtn.isStarred ? "#f59e0b" : Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.35)
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     background: Rectangle {
-                                        color: starBtn.hovered ? Qt.rgba(1, 1, 1, 0.1) : "transparent"
+                                        color: starBtn.hovered ? Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.08) : "transparent"
                                         radius: 4
                                     }
                                     ToolTip.visible: hovered
