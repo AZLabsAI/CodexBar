@@ -343,3 +343,128 @@ test('quota drop between refreshes detects draining account and gives it menu ba
     assert.equal(segments[0].text, '60%');
     assert.equal(segments[0].isDraining, true);
 });
+
+test('banked resets are extracted and formatted correctly for Codex accounts (including multi-account)', () => {
+    const rawCodexJson = JSON.stringify([
+        {
+            provider: 'codex',
+            account: 'personal@example.com',
+            usage: {
+                primary: {usedPercent: 20, windowMinutes: 300},
+                codexResetCredits: {
+                    availableCount: 3,
+                    credits: [
+                        {id: 'c1', status: 'available', expires_at: new Date(Date.now() + 86400000 * 14).toISOString()},
+                        {id: 'c2', status: 'available', expires_at: new Date(Date.now() + 86400000 * 21).toISOString()},
+                        {id: 'c3', status: 'available', expires_at: new Date(Date.now() + 86400000 * 28).toISOString()}
+                    ]
+                }
+            }
+        },
+        {
+            provider: 'codex',
+            account: 'work@example.com',
+            usage: {
+                primary: {usedPercent: 40, windowMinutes: 300},
+                codexResetCredits: {
+                    availableCount: 1,
+                    credits: [
+                        {id: 'c4', status: 'available', expires_at: new Date(Date.now() + 86400000 * 5).toISOString()}
+                    ]
+                }
+            }
+        }
+    ]);
+
+    const rows = model.rows(rawCodexJson, true);
+    assert.equal(rows.length, 2);
+
+    // Account 1
+    assert.ok(rows[0].bankedResets);
+    assert.equal(rows[0].bankedResets.available, true);
+    assert.equal(rows[0].bankedResets.count, 3);
+    assert.equal(rows[0].bankedResets.text, '3 available');
+    assert.ok(rows[0].bankedResets.expiryText.includes('14d'));
+    assert.ok(rows[0].bankedResets.summary.includes('3 available'));
+
+    // Account 2
+    assert.ok(rows[1].bankedResets);
+    assert.equal(rows[1].bankedResets.available, true);
+    assert.equal(rows[1].bankedResets.count, 1);
+    assert.equal(rows[1].bankedResets.text, '1 available');
+    assert.ok(rows[1].bankedResets.expiryText.includes('5d'));
+
+    // Verify detail row was injected into details
+    const acct1Details = rows[0].details;
+    assert.ok(acct1Details.some(s => s.rows.some(r => r.label === 'Limit Reset Credits' && r.value === '3 available')));
+});
+
+test('banked resets are extracted and formatted correctly for Claude accounts (via claudeResetCredits and details)', () => {
+    // 1. Via claudeResetCredits
+    const rawClaudeJson1 = JSON.stringify({
+        provider: 'claude',
+        usage: {
+            primary: {usedPercent: 50, windowMinutes: 300},
+            claudeResetCredits: {
+                expirations: [
+                    new Date(Date.now() + 86400000 * 3).toISOString(),
+                    new Date(Date.now() + 86400000 * 7).toISOString()
+                ]
+            }
+        }
+    });
+
+    const rows1 = model.rows(rawClaudeJson1, false);
+    assert.equal(rows1.length, 1);
+    assert.ok(rows1[0].bankedResets);
+    assert.equal(rows1[0].bankedResets.available, true);
+    assert.equal(rows1[0].bankedResets.count, 2);
+    assert.equal(rows1[0].bankedResets.text, '2 available');
+    assert.ok(rows1[0].bankedResets.expiryText.includes('3d'));
+
+    // 2. Via details row
+    const rawClaudeJson2 = JSON.stringify({
+        provider: 'claude',
+        usage: {
+            primary: {usedPercent: 30, windowMinutes: 300},
+            details: [
+                {
+                    title: '',
+                    rows: [
+                        {
+                            label: 'Limit Reset Credits',
+                            value: '1 available',
+                            secondaryValue: 'Expires in 4d'
+                        }
+                    ]
+                }
+            ]
+        }
+    });
+
+    const rows2 = model.rows(rawClaudeJson2, false);
+    assert.equal(rows2.length, 1);
+    assert.ok(rows2[0].bankedResets);
+    assert.equal(rows2[0].bankedResets.available, true);
+    assert.equal(rows2[0].bankedResets.count, 1);
+    assert.equal(rows2[0].bankedResets.text, '1 available');
+    assert.equal(rows2[0].bankedResets.expiryText, 'Expires in 4d');
+});
+
+test('accounts with no banked resets or zero count report bankedResets as null', () => {
+    const rawJson = JSON.stringify({
+        provider: 'codex',
+        usage: {
+            primary: {usedPercent: 10, windowMinutes: 300},
+            codexResetCredits: {
+                availableCount: 0,
+                credits: []
+            }
+        }
+    });
+
+    const rows = model.rows(rawJson, false);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].bankedResets, null);
+});
+

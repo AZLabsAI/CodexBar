@@ -156,12 +156,25 @@ extension UsageMenuCardView.Model {
                 resetStyle: input.resetTimeDisplayStyle,
                 now: input.now)
         case .claude:
-            guard input.showOptionalCreditsAndExtraUsage else { return nil }
-            guard let resetCredits = input.snapshot?.claudeResetCredits else { return nil }
-            return LimitResetCreditsPresentation.make(
-                expirations: resetCredits.availableExpirations(at: input.now),
-                resetStyle: input.resetTimeDisplayStyle,
-                now: input.now)
+            if let resetCredits = input.snapshot?.claudeResetCredits {
+                return LimitResetCreditsPresentation.make(
+                    expirations: resetCredits.availableExpirations(at: input.now),
+                    resetStyle: input.resetTimeDisplayStyle,
+                    now: input.now)
+            }
+            if let detailSection = input.snapshot?.details.first(where: {
+                $0.rows.contains(where: { $0.label == "Limit Reset Credits" })
+            }), let row = detailSection.rows.first(where: { $0.label == "Limit Reset Credits" }) {
+                let expiry = row.secondaryValue ?? ""
+                return LimitResetCreditsPresentation(
+                    text: row.value,
+                    items: [LimitResetCreditPresentationItem(
+                        expiryText: expiry,
+                        compactExpiryText: expiry
+                    )]
+                )
+            }
+            return nil
         default:
             return nil
         }

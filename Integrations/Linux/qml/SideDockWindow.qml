@@ -650,6 +650,24 @@ ApplicationWindow {
                                             }
                                         }
 
+                                        Rectangle {
+                                            visible: modelData.bankedResets && modelData.bankedResets.available === true
+                                            color: Qt.rgba(0.06, 0.72, 0.51, 0.18)
+                                            radius: 3
+                                            border.color: "#10b981"
+                                            border.width: 1
+                                            Layout.preferredHeight: 18
+                                            implicitWidth: sideBankedBadge.implicitWidth + 8
+                                            Label {
+                                                id: sideBankedBadge
+                                                anchors.centerIn: parent
+                                                text: "⚡ " + (modelData.bankedResets ? modelData.bankedResets.text : "")
+                                                font.pixelSize: 9
+                                                font.bold: true
+                                                color: "#10b981"
+                                            }
+                                        }
+
                                         Label {
                                             text: modelData.accountLabel || ""
                                             font.pixelSize: 11
@@ -790,6 +808,55 @@ ApplicationWindow {
                                                 opacity: 0.6
                                                 font.pixelSize: 9
                                                 Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                    }
+
+                                    // Dedicated Banked Resets Section in SideDock
+                                    Rectangle {
+                                        visible: modelData.bankedResets && modelData.bankedResets.available === true
+                                        Layout.fillWidth: true
+                                        radius: 6
+                                        color: Qt.rgba(0.06, 0.72, 0.51, 0.10)
+                                        border.color: Qt.rgba(0.06, 0.72, 0.51, 0.35)
+                                        border.width: 1
+                                        implicitHeight: sideBankedContent.implicitHeight + 8
+
+                                        RowLayout {
+                                            id: sideBankedContent
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 6
+                                            anchors.rightMargin: 6
+                                            spacing: 4
+
+                                            Label {
+                                                text: "⚡"
+                                                font.pixelSize: 10
+                                            }
+
+                                            Label {
+                                                text: "Banked:"
+                                                font.bold: true
+                                                font.pixelSize: 10
+                                                color: palette.text
+                                            }
+
+                                            Label {
+                                                text: modelData.bankedResets ? modelData.bankedResets.text : ""
+                                                font.bold: true
+                                                font.pixelSize: 10
+                                                color: "#10b981"
+                                            }
+
+                                            Item { Layout.fillWidth: true }
+
+                                            Label {
+                                                text: (modelData.bankedResets && modelData.bankedResets.expiryText) ? modelData.bankedResets.expiryText : ""
+                                                font.pixelSize: 9
+                                                opacity: 0.7
+                                                color: palette.text
+                                                visible: text !== ""
                                                 elide: Text.ElideRight
                                             }
                                         }

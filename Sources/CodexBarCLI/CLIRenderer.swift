@@ -363,11 +363,16 @@ enum CLIRenderer {
         now: Date = Date()) -> [String]
     {
         var lines: [String] = []
-        // Provider-specific by design: codexResetCredits is a behavioral Codex payload, not presentation metadata.
         if provider == .codex, let resetCredits = snapshot.codexResetCredits {
             let inventory = resetCredits.availableInventory(at: now)
             let value = inventory.count == 1 ? "1 available" : "\(inventory.count) available"
             lines.append(self.labelValueLine("Limit Reset Credits", value: value, useColor: useColor))
+        } else if provider == .claude, let resetCredits = snapshot.claudeResetCredits {
+            let expirations = resetCredits.availableExpirations(at: now)
+            if !expirations.isEmpty {
+                let value = expirations.count == 1 ? "1 available" : "\(expirations.count) available"
+                lines.append(self.labelValueLine("Limit Reset Credits", value: value, useColor: useColor))
+            }
         }
         if let credits,
            let remaining = ProviderDescriptorRegistry.descriptor(for: provider)
@@ -722,6 +727,10 @@ enum CLIRenderer {
     {
         // Provider-specific by design: codexResetCredits is a behavioral Codex payload, not presentation metadata.
         guard provider == .codex, let resetCredits = snapshot.codexResetCredits else { return }
+        let hasDetailRow = snapshot.details.contains(where: { section in
+            section.rows.contains(where: { $0.label == "Limit Reset Credits" })
+        })
+        guard !hasDetailRow else { return }
         let inventory = resetCredits.availableInventory(at: now)
         let value = if inventory.count == 1 {
             "1 available"

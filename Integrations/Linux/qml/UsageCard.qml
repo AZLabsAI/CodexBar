@@ -55,7 +55,7 @@ Frame {
         }
         RowLayout {
             Layout.fillWidth: true
-            visible: (root.entry.accountLabel || "") !== "" || root.entry.isDraining === true || desktop.providerAccountCount(root.entry.provider) > 1
+            visible: (root.entry.accountLabel || "") !== "" || root.entry.isDraining === true || desktop.providerAccountCount(root.entry.provider) > 1 || (root.entry.bankedResets && root.entry.bankedResets.available)
             spacing: 8
             Rectangle {
                 visible: desktop.providerAccountCount(root.entry.provider) > 1
@@ -89,6 +89,30 @@ Frame {
                     font.pixelSize: 11
                     font.bold: true
                     color: "#f59e0b"
+                }
+            }
+            Rectangle {
+                visible: root.entry.bankedResets && root.entry.bankedResets.available === true
+                color: Qt.rgba(0.06, 0.72, 0.51, 0.18)
+                radius: 4
+                border.color: "#10b981"
+                border.width: 1
+                Layout.preferredHeight: 24
+                implicitWidth: bankedBadgeLabel.implicitWidth + 14
+                Label {
+                    id: bankedBadgeLabel
+                    anchors.centerIn: parent
+                    text: "⚡ " + (root.entry.bankedResets ? root.entry.bankedResets.text : "") + " Banked"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: "#10b981"
+                }
+                ToolTip.visible: bankedBadgeArea.containsMouse
+                ToolTip.text: root.entry.bankedResets ? ("Banked rate limit resets: " + root.entry.bankedResets.summary) : ""
+                MouseArea {
+                    id: bankedBadgeArea
+                    anchors.fill: parent
+                    hoverEnabled: true
                 }
             }
             Label {
@@ -224,6 +248,62 @@ Frame {
                 Label { text: modelData.pace || ""; visible: desktop.settings.showPace && text !== ""; Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7 }
             }
         }
+
+        // Dedicated Banked Resets Card Block
+        Rectangle {
+            id: bankedResetsCard
+            visible: root.entry.bankedResets && root.entry.bankedResets.available === true
+            Layout.fillWidth: true
+            radius: 8
+            color: Qt.rgba(0.06, 0.72, 0.51, 0.10)
+            border.color: Qt.rgba(0.06, 0.72, 0.51, 0.35)
+            border.width: 1
+            implicitHeight: bankedResetsContent.implicitHeight + 16
+
+            RowLayout {
+                id: bankedResetsContent
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 8
+
+                Label {
+                    text: "⚡"
+                    font.pixelSize: 14
+                }
+
+                ColumnLayout {
+                    spacing: 2
+                    Layout.fillWidth: true
+
+                    RowLayout {
+                        spacing: 6
+                        Label {
+                            text: "Banked Resets:"
+                            font.bold: true
+                            font.pixelSize: 12
+                            color: palette.text
+                        }
+                        Label {
+                            text: root.entry.bankedResets ? root.entry.bankedResets.text : ""
+                            font.bold: true
+                            font.pixelSize: 12
+                            color: "#10b981"
+                        }
+                    }
+
+                    Label {
+                        text: (root.entry.bankedResets && root.entry.bankedResets.expiryText) ? root.entry.bankedResets.expiryText : ""
+                        font.pixelSize: 11
+                        opacity: 0.75
+                        color: palette.text
+                        visible: text !== ""
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+        }
+
         Label { text: "Credits: " + root.entry.credits; visible: root.entry.credits !== null && root.entry.credits !== undefined }
         Repeater {
             model: root.entry.details || []
@@ -232,7 +312,16 @@ Frame {
                 Layout.fillWidth: true
                 Label { text: modelData.title; visible: text !== ""; font.bold: true }
                 Repeater {
-                    model: modelData.rows
+                    model: {
+                        var rows = modelData.rows || [];
+                        if (root.entry.bankedResets && root.entry.bankedResets.available) {
+                            return rows.filter(function(r) {
+                                var l = (r.label || "").toLowerCase();
+                                return l.indexOf("limit reset") === -1 && l.indexOf("reset credit") === -1 && l.indexOf("banked reset") === -1;
+                            });
+                        }
+                        return rows;
+                    }
                     Label {
                         required property var modelData
                         Layout.fillWidth: true

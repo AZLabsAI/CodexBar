@@ -6,7 +6,7 @@ import Foundation
 /// Display-safe, live-only inventory. Grant identifiers are redemption handles; they are never decoded, so
 /// they never enter a UsageSnapshot, its persisted JSON, or CLI output. The usage request skips the URL cache,
 /// so the raw response is not kept on disk either.
-public struct ClaudeRateLimitResetCreditsSnapshot: Sendable, Equatable {
+public struct ClaudeRateLimitResetCreditsSnapshot: Sendable, Equatable, Codable {
     static let detailLabel = "Limit Reset Credits"
 
     /// Expiry of each reset available at `updatedAt`; a grant with `resets_left: 2` contributes two entries.

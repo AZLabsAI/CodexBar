@@ -189,6 +189,7 @@ public struct UsageSnapshot: Codable, Sendable {
         case details
         case openAIAPIUsage
         case codexResetCredits
+        case claudeResetCredits
         case mistralUsage
         case copilotMeteredZeroCredits
         case subscriptionExpiresAt
@@ -333,8 +334,7 @@ public struct UsageSnapshot: Codable, Sendable {
         self.costUsage = nil // Live-only provider history; refresh from the authoritative source.
         let details = try container.decodeIfPresent([ProviderDetailSection].self, forKey: .details) ?? []
         try ProviderDetailSection.validateSections(details)
-        // Provider-specific by design: native Grok and Claude reset-credit rows are live-only inventory.
-        self.details = decodedIdentity?.providerID == .grok || decodedIdentity?.providerID == .claude
+        self.details = decodedIdentity?.providerID == .grok
             ? Self.removingLiveResetCreditDetails(from: details)
             : details
         self.deepseekDetailedUsageState = .notRequested // Live-only fetch state
@@ -346,7 +346,9 @@ public struct UsageSnapshot: Codable, Sendable {
             CodexRateLimitResetCreditsSnapshot.self,
             forKey: .codexResetCredits)
         self.grokResetCredits = nil // Live-only inventory; refresh without persisting redemption state.
-        self.claudeResetCredits = nil // Live-only inventory; a reset used on claude.ai must not reappear.
+        self.claudeResetCredits = try container.decodeIfPresent(
+            ClaudeRateLimitResetCreditsSnapshot.self,
+            forKey: .claudeResetCredits)
         self.mistralUsage = try container.decodeIfPresent(MistralUsageSnapshot.self, forKey: .mistralUsage)
         self.copilotMeteredZeroCredits = try container
             .decodeIfPresent(Bool.self, forKey: .copilotMeteredZeroCredits) ?? false
@@ -377,6 +379,7 @@ public struct UsageSnapshot: Codable, Sendable {
         }
         try container.encodeIfPresent(self.openAIAPIUsage, forKey: .openAIAPIUsage)
         try container.encodeIfPresent(self.codexResetCredits, forKey: .codexResetCredits)
+        try container.encodeIfPresent(self.claudeResetCredits, forKey: .claudeResetCredits)
         try container.encodeIfPresent(self.mistralUsage, forKey: .mistralUsage)
         if self.copilotMeteredZeroCredits {
             try container.encode(true, forKey: .copilotMeteredZeroCredits)

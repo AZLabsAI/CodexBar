@@ -431,6 +431,54 @@ ApplicationWindow {
                         }
                     }
 
+                    // Banked Resets Banner in MiniWindow
+                    Rectangle {
+                        visible: currentEntry && currentEntry.bankedResets && currentEntry.bankedResets.available === true
+                        Layout.fillWidth: true
+                        radius: 6
+                        color: Qt.rgba(0.06, 0.72, 0.51, 0.12)
+                        border.color: Qt.rgba(0.06, 0.72, 0.51, 0.35)
+                        border.width: 1
+                        implicitHeight: miniBankedContent.implicitHeight + 12
+
+                        RowLayout {
+                            id: miniBankedContent
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 6
+
+                            Label {
+                                text: "⚡"
+                                font.pixelSize: 12
+                            }
+
+                            Label {
+                                text: "Banked Resets:"
+                                font.bold: true
+                                font.pixelSize: 11
+                                color: palette.text
+                            }
+
+                            Label {
+                                text: (currentEntry && currentEntry.bankedResets) ? currentEntry.bankedResets.text : ""
+                                font.bold: true
+                                font.pixelSize: 11
+                                color: "#10b981"
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Label {
+                                text: (currentEntry && currentEntry.bankedResets && currentEntry.bankedResets.expiryText) ? currentEntry.bankedResets.expiryText : ""
+                                font.pixelSize: 10
+                                opacity: 0.7
+                                color: palette.text
+                                visible: text !== ""
+                            }
+                        }
+                    }
+
                     // Quota Windows (canonical order for Antigravity)
                     Repeater {
                         model: {
@@ -597,7 +645,16 @@ ApplicationWindow {
                             }
 
                             Repeater {
-                                model: modelData.rows
+                                model: {
+                                    var rows = modelData.rows || [];
+                                    if (currentEntry && currentEntry.bankedResets && currentEntry.bankedResets.available) {
+                                        return rows.filter(function(r) {
+                                            var l = (r.label || "").toLowerCase();
+                                            return l.indexOf("limit reset") === -1 && l.indexOf("reset credit") === -1 && l.indexOf("banked reset") === -1;
+                                        });
+                                    }
+                                    return rows;
+                                }
 
                                 Label {
                                     required property var modelData

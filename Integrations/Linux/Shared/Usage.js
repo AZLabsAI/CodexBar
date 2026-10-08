@@ -164,6 +164,157 @@ function rows(text, showIdentity) {
             }
         }
 
+        // Banked Resets Parsing (for both Codex and Claude accounts)
+        var bankedResets = null;
+
+        // 1. Direct codexResetCredits payload (Codex accounts)
+        if (usage.codexResetCredits && typeof usage.codexResetCredits === "object") {
+            var crc = usage.codexResetCredits;
+            var rawCredits = Array.isArray(crc.credits) ? crc.credits : [];
+            var nowMs = Date.now();
+            var activeCredits = rawCredits.filter(function(c) {
+                if (!c) return false;
+                if (c.status && c.status !== "available") return false;
+                if (c.expires_at) {
+                    var expMs = Date.parse(c.expires_at);
+                    if (!isNaN(expMs) && expMs <= nowMs) return false;
+                }
+                return true;
+            });
+            var reportedCount = typeof crc.availableCount === "number" && crc.availableCount >= 0
+                ? crc.availableCount
+                : activeCredits.length;
+
+            if (reportedCount > 0 || activeCredits.length > 0) {
+                var cCount = Math.max(reportedCount, activeCredits.length);
+                var earliestExp = null;
+                for (var ci = 0; ci < activeCredits.length; ci++) {
+                    var cred = activeCredits[ci];
+                    if (cred && cred.expires_at) {
+                        var eMs = Date.parse(cred.expires_at);
+                        if (!isNaN(eMs)) {
+                            if (earliestExp === null || eMs < earliestExp) {
+                                earliestExp = eMs;
+                            }
+                        }
+                    }
+                }
+                var expText = "";
+                if (earliestExp !== null) {
+                    var secDiff = Math.max(0, Math.round((earliestExp - nowMs) / 1000));
+                    var days = Math.floor(secDiff / 86400);
+                    var hours = Math.floor((secDiff % 86400) / 3600);
+                    if (days > 0) expText = "Next expires in " + days + "d";
+                    else if (hours > 0) expText = "Next expires in " + hours + "h";
+                    else expText = "Next expires soon";
+                }
+                var cText = cCount === 1 ? "1 available" : cCount + " available";
+                bankedResets = {
+                    available: true,
+                    count: cCount,
+                    text: cText,
+                    expiryText: expText,
+                    summary: cText + (expText ? " · " + expText : "")
+                };
+            }
+        }
+
+        // 2. Direct claudeResetCredits payload (Claude accounts)
+        if (!bankedResets && usage.claudeResetCredits && typeof usage.claudeResetCredits === "object") {
+            var clrc = usage.claudeResetCredits;
+            var rawExpirations = Array.isArray(clrc.expirations) ? clrc.expirations : [];
+            var nowMsCl = Date.now();
+            var activeExps = rawExpirations.filter(function(exp) {
+                if (!exp) return true; // null expiry means no expiration date
+                var expMs = Date.parse(exp);
+                return isNaN(expMs) || expMs > nowMsCl;
+            });
+            if (activeExps.length > 0) {
+                var clCount = activeExps.length;
+                var earliestClExp = null;
+                for (var cei = 0; cei < activeExps.length; cei++) {
+                    var expVal = activeExps[cei];
+                    if (expVal) {
+                        var cMs = Date.parse(expVal);
+                        if (!isNaN(cMs)) {
+                            if (earliestClExp === null || cMs < earliestClExp) {
+                                earliestClExp = cMs;
+                            }
+                        }
+                    }
+                }
+                var clExpText = "";
+                if (earliestClExp !== null) {
+                    var sDiff = Math.max(0, Math.round((earliestClExp - nowMsCl) / 1000));
+                    var clDays = Math.floor(sDiff / 86400);
+                    var clHours = Math.floor((sDiff % 86400) / 3600);
+                    if (clDays > 0) clExpText = "Next expires in " + clDays + "d";
+                    else if (clHours > 0) clExpText = "Next expires in " + clHours + "h";
+                    else clExpText = "Next expires soon";
+                }
+                var clText = clCount === 1 ? "1 available" : clCount + " available";
+                bankedResets = {
+                    available: true,
+                    count: clCount,
+                    text: clText,
+                    expiryText: clExpText,
+                    summary: clText + (clExpText ? " · " + clExpText : "")
+                };
+            }
+        }
+
+        // 3. Details section check (works for both Claude and Codex when emitted as a detail row)
+        if (!bankedResets) {
+            for (var dIdx = 0; dIdx < details.length; dIdx++) {
+                var dSec = details[dIdx];
+                for (var rIdx = 0; rIdx < (dSec.rows || []).length; rIdx++) {
+                    var dRow = dSec.rows[rIdx];
+                    var lLower = String(dRow.label || "").toLowerCase();
+                    if (lLower.indexOf("limit reset") !== -1 || lLower.indexOf("reset credit") !== -1 || lLower.indexOf("banked reset") !== -1) {
+                        var vStr = String(dRow.value || "");
+                        var numMatch = vStr.match(/\d+/);
+                        var rCount = numMatch ? parseInt(numMatch[0], 10) : 1;
+                        var secVal = String(dRow.secondaryValue || "");
+                        bankedResets = {
+                            available: rCount > 0,
+                            count: rCount,
+                            text: vStr.trim() !== "" ? vStr : (rCount === 1 ? "1 available" : rCount + " available"),
+                            expiryText: secVal,
+                            summary: vStr + (secVal ? " · " + secVal : "")
+                        };
+                        break;
+                    }
+                }
+                if (bankedResets) break;
+            }
+        }
+
+        // Ensure details has Limit Reset Credits row if bankedResets exist
+        if (bankedResets && bankedResets.available) {
+            var detailRowFound = false;
+            for (var df = 0; df < details.length; df++) {
+                for (var rf = 0; rf < (details[df].rows || []).length; rf++) {
+                    var rowLbl = String(details[df].rows[rf].label || "").toLowerCase();
+                    if (rowLbl.indexOf("limit reset") !== -1 || rowLbl.indexOf("reset credit") !== -1 || rowLbl.indexOf("banked reset") !== -1) {
+                        detailRowFound = true;
+                        break;
+                    }
+                }
+                if (detailRowFound) break;
+            }
+            if (!detailRowFound) {
+                details.unshift({
+                    title: "",
+                    rows: [{
+                        label: "Limit Reset Credits",
+                        value: bankedResets.text,
+                        secondaryValue: bankedResets.expiryText
+                    }],
+                    chart: null
+                });
+            }
+        }
+
         return {
             provider: entry.provider,
             failed: !!entry.error,
@@ -177,6 +328,7 @@ function rows(text, showIdentity) {
             windows: windows,
             updatedAt: usage.updatedAt || "",
             credits: creditsVal,
+            bankedResets: bankedResets,
             error: entry.error ? "Usage unavailable. Check this provider’s CodexBar login/configuration." :
                 windows.length ? "" : "No quota windows reported."
         };

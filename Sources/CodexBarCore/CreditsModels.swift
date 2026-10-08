@@ -174,6 +174,23 @@ public struct CodexRateLimitResetCreditsSnapshot: Equatable, Codable, Sendable {
     public func availableCredits(at date: Date) -> [CodexRateLimitResetCredit] {
         self.availableInventory(at: date).credits
     }
+
+    public func detailSections(now: Date) -> [ProviderDetailSection] {
+        let inventory = self.availableInventory(at: now)
+        guard !inventory.credits.isEmpty else { return [] }
+        let value = inventory.count == 1 ? "1 available" : "\(inventory.count) available"
+        let nextExpiry = inventory.nextExpiringCredit?.expiresAt
+        return [
+            .makeSection(rows: [
+                .makeRow(
+                    label: "Limit Reset Credits",
+                    value: value,
+                    secondaryValue: nextExpiry.map {
+                        "Expires \(UsageFormatter.resetDescription(from: $0, now: now))"
+                    }),
+            ]),
+        ]
+    }
 }
 
 public struct CodexRateLimitResetCreditInventory: Equatable, Sendable {
