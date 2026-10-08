@@ -624,46 +624,129 @@ ApplicationWindow {
                 }
             }
 
-            // Quick Provider Switcher Strip (Horizontal Scroll)
-            ScrollView {
-                id: provScroll
+            // Quick Provider Switcher Strip (Horizontal Scroll, Click, and Drag)
+            RowLayout {
+                id: provSwitcherRow
                 Layout.fillWidth: true
-                Layout.preferredHeight: 34
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AlwaysOff
-                clip: true
+                Layout.preferredHeight: 36
+                spacing: 3
 
-                RowLayout {
-                    spacing: 4
+                ToolButton {
+                    id: scrollLeftBtn
+                    text: "◀"
+                    font.pixelSize: 10
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 26
+                    visible: provFlickable.contentWidth > provFlickable.width
+                    enabled: provFlickable.contentX > 2
+                    opacity: enabled ? 0.9 : 0.3
+                    onClicked: {
+                        provFlickable.contentX = Math.max(0, provFlickable.contentX - 120);
+                    }
+                    ToolTip.visible: hovered && enabled
+                    ToolTip.text: "Scroll left to see more providers"
+                }
 
-                    Repeater {
-                        model: desktop ? desktop.uniqueProviders : []
+                Flickable {
+                    id: provFlickable
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    contentWidth: provItemsRow.width
+                    contentHeight: height
+                    flickableDirection: Flickable.HorizontalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+                    pressDelay: 150
 
-                        Button {
-                            required property var modelData
-                            property bool isSelected: window.selectedProviderFilter === modelData
-                            text: Usage.providerName(modelData)
-                            icon.source: Usage.providerIcon(modelData)
-                            icon.width: 14
-                            icon.height: 14
-                            icon.color: "transparent"
-                            font.pixelSize: 10
-                            font.bold: isSelected
-                            Layout.preferredHeight: 26
-                            flat: !isSelected
-                            onClicked: window.selectProvider(modelData)
+                    property real dragStartX: 0
+
+                    WheelHandler {
+                        target: provFlickable
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        onWheel: function(event) {
+                            var delta = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y;
+                            var newX = provFlickable.contentX - (delta * 0.9);
+                            provFlickable.contentX = Math.max(0, Math.min(provFlickable.contentWidth - provFlickable.width, newX));
                         }
                     }
 
-                    Button {
-                        property bool isSelected: window.selectedProviderFilter === "all"
-                        text: "All (" + (desktop && desktop.entries ? desktop.entries.length : 0) + ")"
-                        font.pixelSize: 10
-                        font.bold: isSelected
-                        Layout.preferredHeight: 26
-                        flat: !isSelected
-                        onClicked: window.selectProvider("all")
+                    DragHandler {
+                        target: null
+                        xAxis.enabled: true
+                        yAxis.enabled: false
+                        grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.Approvals
+                        onActiveChanged: {
+                            if (active) provFlickable.dragStartX = provFlickable.contentX;
+                        }
+                        onTranslationChanged: {
+                            var newX = provFlickable.dragStartX - translation.x;
+                            provFlickable.contentX = Math.max(0, Math.min(provFlickable.contentWidth - provFlickable.width, newX));
+                        }
                     }
+
+                    Row {
+                        id: provItemsRow
+                        height: provFlickable.height
+                        spacing: 5
+
+                        Repeater {
+                            model: desktop ? desktop.uniqueProviders : []
+
+                            Button {
+                                id: provBtn
+                                required property var modelData
+                                property bool isSelected: window.selectedProviderFilter === modelData
+                                text: Usage.providerName(modelData)
+                                icon.source: Usage.providerIcon(modelData)
+                                icon.width: 14
+                                icon.height: 14
+                                icon.color: "transparent"
+                                font.pixelSize: 10
+                                font.bold: isSelected
+                                height: 26
+                                anchors.verticalCenter: parent.verticalCenter
+                                flat: !isSelected
+                                highlighted: isSelected
+                                onClicked: window.selectProvider(modelData)
+                            }
+                        }
+
+                        Button {
+                            property bool isSelected: window.selectedProviderFilter === "all"
+                            text: "All (" + (desktop && desktop.entries ? desktop.entries.length : 0) + ")"
+                            font.pixelSize: 10
+                            font.bold: isSelected
+                            height: 26
+                            anchors.verticalCenter: parent.verticalCenter
+                            flat: !isSelected
+                            highlighted: isSelected
+                            onClicked: window.selectProvider("all")
+                        }
+                    }
+
+                    ScrollBar.horizontal: ScrollBar {
+                        id: hBar
+                        anchors.bottom: parent.bottom
+                        policy: provFlickable.contentWidth > provFlickable.width ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                        height: 4
+                        active: provFlickable.moving || provFlickable.flicking || hovered
+                    }
+                }
+
+                ToolButton {
+                    id: scrollRightBtn
+                    text: "▶"
+                    font.pixelSize: 10
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 26
+                    visible: provFlickable.contentWidth > provFlickable.width
+                    enabled: provFlickable.contentX < (provFlickable.contentWidth - provFlickable.width - 2)
+                    opacity: enabled ? 0.9 : 0.3
+                    onClicked: {
+                        provFlickable.contentX = Math.min(provFlickable.contentWidth - provFlickable.width, provFlickable.contentX + 120);
+                    }
+                    ToolTip.visible: hovered && enabled
+                    ToolTip.text: "Scroll right to see more providers"
                 }
             }
 

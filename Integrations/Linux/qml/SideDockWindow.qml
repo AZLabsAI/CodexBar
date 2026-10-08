@@ -408,37 +408,112 @@ ApplicationWindow {
                 }
             }
 
-            // --- Provider Quick Filter Chips ---
-            ScrollView {
+            // --- Provider Quick Filter Chips (Horizontal Scroll, Click, and Drag) ---
+            RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 28
-                contentHeight: 28
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                Layout.preferredHeight: 30
+                spacing: 2
 
-                RowLayout {
-                    spacing: 4
+                ToolButton {
+                    id: dockScrollLeftBtn
+                    text: "◀"
+                    font.pixelSize: 9
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 22
+                    visible: dockProvFlickable.contentWidth > dockProvFlickable.width
+                    enabled: dockProvFlickable.contentX > 2
+                    opacity: enabled ? 0.9 : 0.3
+                    onClicked: {
+                        dockProvFlickable.contentX = Math.max(0, dockProvFlickable.contentX - 100);
+                    }
+                }
 
-                    Button {
-                        text: "All"
-                        font.pixelSize: 10
-                        font.bold: window.selectedProviderFilter === "all"
-                        highlighted: window.selectedProviderFilter === "all"
-                        Layout.preferredHeight: 24
-                        onClicked: window.selectedProviderFilter = "all"
+                Flickable {
+                    id: dockProvFlickable
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    contentWidth: dockProvRow.width
+                    contentHeight: height
+                    flickableDirection: Flickable.HorizontalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+                    pressDelay: 150
+
+                    property real dragStartX: 0
+
+                    WheelHandler {
+                        target: dockProvFlickable
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        onWheel: function(event) {
+                            var delta = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y;
+                            var newX = dockProvFlickable.contentX - (delta * 0.9);
+                            dockProvFlickable.contentX = Math.max(0, Math.min(dockProvFlickable.contentWidth - dockProvFlickable.width, newX));
+                        }
                     }
 
-                    Repeater {
-                        model: desktop ? desktop.uniqueProviders : []
-                        Button {
-                            required property string modelData
-                            text: Usage.providerName(modelData)
-                            font.pixelSize: 10
-                            font.bold: window.selectedProviderFilter === modelData
-                            highlighted: window.selectedProviderFilter === modelData
-                            Layout.preferredHeight: 24
-                            onClicked: window.selectedProviderFilter = modelData
+                    DragHandler {
+                        target: null
+                        xAxis.enabled: true
+                        yAxis.enabled: false
+                        grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.Approvals
+                        onActiveChanged: {
+                            if (active) dockProvFlickable.dragStartX = dockProvFlickable.contentX;
                         }
+                        onTranslationChanged: {
+                            var newX = dockProvFlickable.dragStartX - translation.x;
+                            dockProvFlickable.contentX = Math.max(0, Math.min(dockProvFlickable.contentWidth - dockProvFlickable.width, newX));
+                        }
+                    }
+
+                    Row {
+                        id: dockProvRow
+                        height: dockProvFlickable.height
+                        spacing: 4
+
+                        Button {
+                            text: "All"
+                            font.pixelSize: 10
+                            font.bold: window.selectedProviderFilter === "all"
+                            highlighted: window.selectedProviderFilter === "all"
+                            height: 24
+                            anchors.verticalCenter: parent.verticalCenter
+                            onClicked: window.selectedProviderFilter = "all"
+                        }
+
+                        Repeater {
+                            model: desktop ? desktop.uniqueProviders : []
+                            Button {
+                                required property string modelData
+                                text: Usage.providerName(modelData)
+                                font.pixelSize: 10
+                                font.bold: window.selectedProviderFilter === modelData
+                                highlighted: window.selectedProviderFilter === modelData
+                                height: 24
+                                anchors.verticalCenter: parent.verticalCenter
+                                onClicked: window.selectedProviderFilter = modelData
+                            }
+                        }
+                    }
+
+                    ScrollBar.horizontal: ScrollBar {
+                        anchors.bottom: parent.bottom
+                        policy: dockProvFlickable.contentWidth > dockProvFlickable.width ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                        height: 3
+                        active: dockProvFlickable.moving || dockProvFlickable.flicking || hovered
+                    }
+                }
+
+                ToolButton {
+                    id: dockScrollRightBtn
+                    text: "▶"
+                    font.pixelSize: 9
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 22
+                    visible: dockProvFlickable.contentWidth > dockProvFlickable.width
+                    enabled: dockProvFlickable.contentX < (dockProvFlickable.contentWidth - dockProvFlickable.width - 2)
+                    opacity: enabled ? 0.9 : 0.3
+                    onClicked: {
+                        dockProvFlickable.contentX = Math.min(dockProvFlickable.contentWidth - dockProvFlickable.width, dockProvFlickable.contentX + 100);
                     }
                 }
             }
