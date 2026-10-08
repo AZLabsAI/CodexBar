@@ -224,23 +224,55 @@ int main(int argc, char **argv) {
         tray.setToolTip("CodexBar · " + (controller.summary().isEmpty() ? "Usage unavailable" : controller.summary()) +
             " · " + controller.settings().value("quotaDisplay").toString() + (controller.stale() ? " · out of date" : ""));
         if (controller.settings().value("trayStyle") == "icon") { tray.setIcon(QIcon(":/icon.svg")); return; }
-        QVariantList windows;
-        if (!controller.entries().isEmpty()) windows = controller.entries().first().toMap().value("windows").toList();
         QPixmap pixmap(64, 64); pixmap.fill(Qt::transparent);
         QPainter painter(&pixmap); painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(Qt::NoPen);
-        for (int index = 0; index < 2; ++index) {
-            const QRectF track(5, 12 + index * 25, 54, 15);
-            painter.setBrush(QColor("#777777")); painter.drawRoundedRect(track, 4, 4);
-            if (index >= windows.size()) continue;
-            const double remaining = qBound(0.0, windows[index].toMap().value("remaining").toDouble(), 100.0);
-            const bool warning = controller.settings().value("warningColors").toBool() &&
-                remaining <= controller.settings().value("notifyThreshold").toInt();
-            painter.setBrush(controller.stale() ? QColor("#aaaaaa") : warning ? QColor("#e59642") : QApplication::palette().highlight().color());
-            const double value = controller.settings().value("quotaDisplay") == "used" ? 100 - remaining : remaining;
-            painter.drawRoundedRect(QRectF(track.x(), track.y(), track.width() * value / 100, track.height()), 4, 4);
+
+        const QRectF track(5, 22, 54, 20);
+        painter.setBrush(QColor("#555555"));
+        painter.drawRoundedRect(track, 5, 5);
+
+        double targetRemaining = 100.0;
+        bool hasWindow = false;
+
+        if (!controller.entries().isEmpty()) {
+            const auto entryList = controller.entries();
+            // Prioritize 5-hour / session window across entries
+            for (const auto &entryVal : entryList) {
+                const auto wins = entryVal.toMap().value("windows").toList();
+                for (const auto &winVal : wins) {
+                    const auto winMap = winVal.toMap();
+                    const QString label = winMap.value("label").toString().toLower();
+                    const int minutes = winMap.value("windowMinutes").toInt();
+                    if (minutes == 300 || label.contains("5-hour") || label.contains("5 hour") || label.contains("5h") || label.contains("session")) {
+                        targetRemaining = qBound(0.0, winMap.value("remaining").toDouble(), 100.0);
+                        hasWindow = true;
+                        break;
+                    }
+                }
+                if (hasWindow) break;
+            }
+            if (!hasWindow) {
+                const auto wins = entryList.first().toMap().value("windows").toList();
+                if (!wins.isEmpty()) {
+                    targetRemaining = qBound(0.0, wins.first().toMap().value("remaining").toDouble(), 100.0);
+                    hasWindow = true;
+                }
+            }
         }
-        painter.end(); tray.setIcon(QIcon(pixmap));
+
+        if (hasWindow) {
+            const bool warning = controller.settings().value("warningColors").toBool() &&
+                targetRemaining <= controller.settings().value("notifyThreshold").toInt();
+            painter.setBrush(controller.stale() ? QColor("#aaaaaa") : warning ? QColor("#e59642") : QApplication::palette().highlight().color());
+            const double value = controller.settings().value("quotaDisplay") == "used" ? 100.0 - targetRemaining : targetRemaining;
+            const double fillWidth = qBound(0.0, track.width() * value / 100.0, track.width());
+            if (fillWidth > 0.0) {
+                painter.drawRoundedRect(QRectF(track.x(), track.y(), fillWidth, track.height()), 5, 5);
+            }
+        }
+        painter.end();
+        tray.setIcon(QIcon(pixmap));
     };
     QObject::connect(&controller, &DesktopController::changed, &tray, updateTray);
     QObject::connect(&controller, &DesktopController::settingsChanged, &tray, updateTray);

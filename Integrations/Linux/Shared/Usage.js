@@ -167,7 +167,7 @@ function rows(text, showIdentity) {
         return {
             provider: entry.provider,
             failed: !!entry.error,
-            accountLabel: accountName ? displayText(accountName, showIdentity) : "",
+            accountLabel: showIdentity ? String(identity.accountEmail || usage.accountEmail || "") : "",
             accountNumber: entryIndex + 1,
             plan: planName,
             status: entry.status ? String(entry.status.description || entry.status.indicator || "Unknown") : "",
@@ -249,102 +249,90 @@ function costs(text, today) {
 }
 
 // Share the same compact labels and display limit between text and logo adapters.
-function barSegments(entries, mode, starredModel) {
+function barSegments(entries, mode, starredModel, singleBar) {
     if (!entries || !entries.length) return [];
 
-    var starredEntry = null;
-    var starredWin = null;
+    // When singleBar is enabled (or a starred model is present), show strictly ONE relevant bar as efficiently as possible
+    if (singleBar !== false && (singleBar === true || (starredModel && (starredModel.provider || starredModel.label || starredModel.key)))) {
+        var targetEntry = null;
+        var targetWin = null;
+        var isStarred = false;
 
-    if (starredModel) {
-        var sProv = String(starredModel.provider || "").toLowerCase();
-        var sLabel = String(starredModel.label || "").toLowerCase();
-        var sKey = String(starredModel.key || "");
+        // 1. User-explicit starred model selection
+        if (starredModel && (starredModel.provider || starredModel.label || starredModel.key)) {
+            var sProv = String(starredModel.provider || "").toLowerCase();
+            var sLabel = String(starredModel.label || "").toLowerCase();
+            var sKey = String(starredModel.key || "");
 
-        for (var i = 0; i < entries.length; i++) {
-            var ent = entries[i];
-            if (sProv && ent.provider.toLowerCase() !== sProv) continue;
-            var wins = ent.windows || [];
-            for (var j = 0; j < wins.length; j++) {
-                var w = wins[j];
-                var match = false;
-                if (sKey && w.key && w.key === sKey) match = true;
-                else if (sLabel && w.label && w.label.toLowerCase() === sLabel) match = true;
-                else if (sLabel && w.label && w.label.toLowerCase().indexOf(sLabel) !== -1) match = true;
-                if (match) {
-                    starredEntry = ent;
-                    starredWin = w;
-                    break;
-                }
-            }
-            if (starredWin) break;
-        }
-    }
-
-    if (!starredWin) {
-        for (var i = 0; i < entries.length; i++) {
-            var ent = entries[i];
-            if (ent.provider === "antigravity") {
+            for (var i = 0; i < entries.length; i++) {
+                var ent = entries[i];
+                if (sProv && ent.provider.toLowerCase() !== sProv) continue;
                 var wins = ent.windows || [];
                 for (var j = 0; j < wins.length; j++) {
                     var w = wins[j];
-                    var l = (w.label || "").toLowerCase();
-                    if (l.indexOf("gemini") !== -1 && l.indexOf("weekly") !== -1) {
-                        starredEntry = ent;
-                        starredWin = w;
+                    var match = false;
+                    if (sKey && w.key && w.key === sKey) match = true;
+                    else if (sLabel && w.label && w.label.toLowerCase() === sLabel) match = true;
+                    else if (sLabel && w.label && w.label.toLowerCase().indexOf(sLabel) !== -1) match = true;
+                    if (match) {
+                        targetEntry = ent;
+                        targetWin = w;
+                        isStarred = true;
                         break;
                     }
                 }
-                if (starredWin) break;
+                if (targetWin) break;
             }
+        }
+
+        // 2. Fallback: most relevant available window of the top entry (e.g. 5-hour rate limit or primary representative)
+        if (!targetWin) {
+            for (var i = 0; i < entries.length; i++) {
+                var ent = entries[i];
+                if (ent.windows && ent.windows.length) {
+                    targetEntry = ent;
+                    targetWin = ent.windows[0];
+                    break;
+                }
+            }
+        }
+
+        if (targetWin && targetEntry) {
+            var tag = targetEntry.provider === "codex" ? "CX" :
+                      targetEntry.provider === "claude" ? "CL" :
+                      targetEntry.provider;
+
+            var item = {
+                provider: targetEntry.provider,
+                tag: tag,
+                text: quotaValue(targetWin.remaining, mode) + "%"
+            };
+
+            if (isStarred) {
+                item.isStarred = true;
+                item.label = targetWin.label;
+            }
+
+            return [item];
         }
     }
 
-    var segments = [];
-    if (starredWin && starredEntry) {
-        var rem = typeof starredWin.remaining === "number" ? starredWin.remaining : 100;
-        var used = 100 - rem;
-        var color = "";
-        if (used >= 90 || rem <= 10) color = "#ff3b30";
-        else if (used >= 75 || rem <= 25) color = "#ff9500";
-
-        segments.push({
-            provider: starredEntry.provider,
-            tag: starredEntry.provider === "codex" ? "CX" : starredEntry.provider === "claude" ? "CL" : starredEntry.provider,
-            text: quotaValue(starredWin.remaining, mode) + "%",
-            color: color,
-            isStarred: true,
-            label: starredWin.label
-        });
-    }
-
-    for (var i = 0; i < entries.length && segments.length < 2; i++) {
-        var ent = entries[i];
-        var win = ent.windows && ent.windows.length ? ent.windows[0] : null;
-        if (!win) continue;
-        if (starredWin && ent === starredEntry && win === starredWin) continue;
-
-        var rem = typeof win.remaining === "number" ? win.remaining : 100;
-        var used = 100 - rem;
-        var color = "";
-        if (used >= 90 || rem <= 10) color = "#ff3b30";
-        else if (used >= 75 || rem <= 25) color = "#ff9500";
-
-        segments.push({
-            provider: ent.provider,
-            tag: ent.provider === "codex" ? "CX" : ent.provider === "claude" ? "CL" : ent.provider,
-            text: quotaValue(win.remaining, mode) + "%",
-            color: color,
-            isStarred: false,
-            label: win.label
-        });
-    }
-
-    return segments;
+    // Default 2-entry presentation for legacy callers and multi-bar tests
+    return entries.slice(0, 2).map(function(entry) {
+        return {
+            provider: entry.provider,
+            tag: entry.provider === "codex" ? "CX" : entry.provider === "claude" ? "CL" : entry.provider,
+            text: entry.windows && entry.windows.length ? quotaValue(entry.windows[0].remaining, mode) + "%" : "—"
+        };
+    });
 }
 
-function summary(entries, mode, starredModel) {
-    var shown = barSegments(entries, mode, starredModel);
+function summary(entries, mode, starredModel, singleBar) {
+    var shown = barSegments(entries, mode, starredModel, singleBar);
     var label = shown.map(function(entry) { return (entry.isStarred ? "★ " : "") + entry.tag + " " + entry.text; }).join("  ·  ");
+    if (singleBar !== false && (singleBar === true || (starredModel && starredModel.label))) {
+        return label;
+    }
     return label + (entries.length > shown.length ? "  +" + (entries.length - shown.length) : "");
 }
 

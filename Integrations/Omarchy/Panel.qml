@@ -143,7 +143,7 @@ Panel {
                     var shown = Array.isArray(button.segments) ? button.segments.length : 0
                     return total - shown
                 }
-                visible: extra > 0
+                visible: root.snapshot && root.snapshot.singleBar !== true && extra > 0
                 text: "+" + extra
                 color: button.foreground
                 font.family: button.fontFamily; font.pixelSize: button.fontSize

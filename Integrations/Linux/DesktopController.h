@@ -40,6 +40,8 @@ public:
     Q_INVOKABLE bool setStarredModel(const QString &provider, const QString &label, const QString &key = QString());
     Q_INVOKABLE bool isStarredModel(const QString &provider, const QString &label, const QString &key = QString()) const;
     Q_INVOKABLE QVariantMap starredModel() const;
+    Q_INVOKABLE bool singleBar() const;
+    Q_INVOKABLE bool setSingleBar(bool enabled);
     Q_INVOKABLE void refreshAccount(const QString &provider, int accountIndex = 1);
     Q_INVOKABLE bool isAccountRefreshing(const QString &provider, int accountIndex = 1) const;
     Q_INVOKABLE int providerAccountCount(const QString &provider) const;

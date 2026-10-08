@@ -119,6 +119,9 @@ bool DesktopController::validate(QVariantMap &values) {
     if (values.contains("accentColor")) {
         values["accentColor"] = values.value("accentColor").toString();
     }
+    if (values.contains("singleBar")) {
+        values["singleBar"] = values.value("singleBar").toBool();
+    }
     if (values.contains("starredModel")) {
         values["starredModel"] = values.value("starredModel").toMap();
     }
@@ -129,8 +132,9 @@ void DesktopController::loadSettings(const QString &cliOverride) {
     m_settings = {{"executable", "codexbar"}, {"provider", "codex"}, {"source", "auto"},
         {"refreshSeconds", 300}, {"accountIndex", 0}, {"notifyThreshold", 25}, {"allAccounts", true},
         {"showIdentity", false}, {"showCosts", true}, {"showStatus", true}, {"notifications", true}, {"showTray", true}, {"refreshOnOpen", false}, {"providerOrder", QStringList{}},
-        {"quotaDisplay", "used"}, {"resetDisplay", "countdown"}, {"showPace", true},
-        {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}, {"starredModel", QVariantMap{{"provider", "antigravity"}, {"label", "Gemini weekly"}}},
+        {"quotaDisplay", "remaining"}, {"resetDisplay", "countdown"}, {"showPace", true},
+        {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}, {"starredModel", QVariantMap{}},
+        {"singleBar", true},
         {"sidebarOpacity", 0.85}, {"sidebarSide", "right"}, {"sidebarPinned", true}, {"sidebarCollapsed", false}, {"sidebarHoverBrighten", true},
         {"themeMode", "dark"}, {"accentColor", "violet"}, {"windowOpacity", 0.95}, {"miniOpacity", 0.90}};
     m_configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/codexbar/linux.json";
@@ -350,8 +354,9 @@ void DesktopController::updateLabels() {
     const auto rows = m_engine.toScriptValue(m_entries);
     const auto mode = m_settings.value("quotaDisplay").toString();
     const auto starred = m_engine.toScriptValue(m_settings.value("starredModel"));
-    m_summary = call(m_usageModel, "summary", {rows, mode, starred}).toString();
-    m_barEntries = QJsonArray::fromVariantList(call(m_usageModel, "barSegments", {rows, mode, starred}).toVariant().toList());
+    const bool single = m_settings.value("singleBar", true).toBool();
+    m_summary = call(m_usageModel, "summary", {rows, mode, starred, single}).toString();
+    m_barEntries = QJsonArray::fromVariantList(call(m_usageModel, "barSegments", {rows, mode, starred, single}).toVariant().toList());
 }
 
 QJsonObject DesktopController::snapshot() const {
@@ -381,20 +386,13 @@ QJsonObject DesktopController::snapshot() const {
                 {window.value("resetsAt").toString(), double(QDateTime::currentMSecsSinceEpoch()), m_settings.value("resetDisplay").toString()}).toString();
             windows.append(QJsonObject::fromVariantMap(window));
         }
-        QJsonObject entryObj{
+        compact.append(QJsonObject{
             {"provider", row.value("provider").toString()},
-            {"accountLabel", row.value("accountLabel").toString()},
-            {"plan", row.value("plan").toString()},
             {"windows", windows},
-            {"details", QJsonArray::fromVariantList(row.value("details").toList())},
             {"error", row.value("error").toString()}
-        };
-        if (!row.value("credits").isNull()) {
-            entryObj["credits"] = row.value("credits").toLongLong();
-        }
-        compact.append(entryObj);
+        });
     }
-    return {{"schemaVersion", 1}, {"pid", QCoreApplication::applicationPid()}, {"summary", m_summary}, {"barEntries", m_barEntries}, {"starredModel", QJsonObject::fromVariantMap(m_settings.value("starredModel").toMap())},
+    return {{"schemaVersion", 1}, {"pid", QCoreApplication::applicationPid()}, {"summary", m_summary}, {"barEntries", m_barEntries}, {"starredModel", QJsonObject::fromVariantMap(m_settings.value("starredModel").toMap())}, {"singleBar", m_settings.value("singleBar", true).toBool()},
         {"entries", compact}, {"quotaDisplay", m_settings.value("quotaDisplay").toString()}, {"busy", busy()}, {"stale", stale()}, {"error", m_error},
         {"updated", updated()}, {"costBusy", costBusy()}, {"costProviders", m_spending.size()}, {"costError", m_costError}};
 }
@@ -613,12 +611,7 @@ bool DesktopController::setStarredModel(const QString &provider, const QString &
 
 bool DesktopController::isStarredModel(const QString &provider, const QString &label, const QString &key) const {
     const auto starred = m_settings.value("starredModel").toMap();
-    if (starred.isEmpty()) {
-        if (provider == "antigravity" && label.contains("gemini", Qt::CaseInsensitive) && label.contains("weekly", Qt::CaseInsensitive)) {
-            return true;
-        }
-        return false;
-    }
+    if (starred.isEmpty()) return false;
     if (starred.value("provider").toString() != provider) return false;
     if (!key.isEmpty() && !starred.value("key").toString().isEmpty()) {
         if (starred.value("key").toString() == key) return true;
@@ -628,6 +621,14 @@ bool DesktopController::isStarredModel(const QString &provider, const QString &l
 
 QVariantMap DesktopController::starredModel() const {
     return m_settings.value("starredModel").toMap();
+}
+
+bool DesktopController::singleBar() const {
+    return m_settings.value("singleBar", true).toBool();
+}
+
+bool DesktopController::setSingleBar(bool enabled) {
+    return saveSettings({{"singleBar", enabled}});
 }
 
 void DesktopController::refreshAccount(const QString &provider, int accountIndex) {
