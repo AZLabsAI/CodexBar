@@ -274,3 +274,72 @@ test('identical same-family windows use Core title ordering for the representati
     assert.deepEqual([...row.windows.map(item => item.key)], [
         'extra:antigravity-quota-summary-gemini-amber', 'extra:antigravity-quota-summary-gemini-zebra']);
 });
+
+test('an account currently being drained moves to the top of the list and appears in the menu bar', () => {
+    const idleAccount = {
+        provider: 'codex',
+        accountNumber: 1,
+        accountLabel: 'Account 1 (Idle)',
+        windows: [{
+            key: 'primary',
+            label: '5 hour',
+            remaining: 85,
+            pace: '40% in reserve | Expected 60% used | Lasts until reset'
+        }]
+    };
+    const drainingAccount = {
+        provider: 'codex',
+        accountNumber: 2,
+        accountLabel: 'Account 2 (Active Drain)',
+        windows: [{
+            key: 'primary',
+            label: '5 hour',
+            remaining: 15,
+            warning: true,
+            pace: '12% in deficit | Expected 80% used | Projected empty in 25m'
+        }]
+    };
+
+    const entries = [idleAccount, drainingAccount];
+
+    const prioritized = model.prioritizeDrainingAccounts(entries);
+    assert.equal(prioritized[0].accountNumber, 2);
+    assert.equal(prioritized[0].isDraining, true);
+    assert.equal(prioritized[1].accountNumber, 1);
+
+    const segments = model.barSegments(entries, 'remaining');
+    assert.equal(segments.length, 1);
+    assert.equal(segments[0].provider, 'codex');
+    assert.equal(segments[0].text, '15%');
+    assert.equal(segments[0].isDraining, true);
+    assert.equal(segments[0].accountNumber, 2);
+
+    assert.equal(model.summary(entries, 'remaining'), 'CX 15%');
+});
+
+test('quota drop between refreshes detects draining account and gives it menu bar precedence', () => {
+    const account1 = {
+        provider: 'claude',
+        accountNumber: 1,
+        windows: [{key: 'primary', label: '5 hour', remaining: 80}]
+    };
+    const account2 = {
+        provider: 'claude',
+        accountNumber: 2,
+        windows: [{key: 'primary', label: '5 hour', remaining: 60}]
+    };
+
+    const prevQuotas = {
+        'claude:2': {primary: 90},
+        'claude:1': {primary: 80}
+    };
+
+    const prioritized = model.prioritizeDrainingAccounts([account1, account2], prevQuotas);
+    assert.equal(prioritized[0].accountNumber, 2);
+    assert.equal(prioritized[0].isDraining, true);
+
+    const segments = model.barSegments([account1, account2], 'remaining', {}, true, prevQuotas);
+    assert.equal(segments[0].provider, 'claude');
+    assert.equal(segments[0].text, '60%');
+    assert.equal(segments[0].isDraining, true);
+});

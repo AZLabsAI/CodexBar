@@ -248,9 +248,178 @@ function costs(text, today) {
     });
 }
 
+// Evaluate whether a window is being actively drained (deficit pace, burn-out projection, drop, or critical/warning)
+function windowDrainScore(window, previousRemaining) {
+    if (!window || typeof window.remaining !== "number") return 0;
+    var pace = String(window.pace || "").toLowerCase();
+    var score = 0;
+    var isDraining = false;
+
+    // 1. Explicit pace deficit or burn-out projection
+    if (pace.indexOf("deficit") !== -1) {
+        isDraining = true;
+        score += 1000;
+        var match = pace.match(/(\d+)%\s*in\s*deficit/);
+        if (match) score += parseInt(match[1], 10) * 10;
+    }
+    if (pace.indexOf("projected empty") !== -1) {
+        isDraining = true;
+        score += 500;
+    } else if (pace.indexOf("runs out in") !== -1) {
+        isDraining = true;
+        score += 300;
+    }
+
+    // 2. Active quota drop since previous refresh
+    if (typeof previousRemaining === "number" && previousRemaining > window.remaining) {
+        isDraining = true;
+        var drop = previousRemaining - window.remaining;
+        score += 2000 + drop * 50;
+    }
+
+    // 3. Critical or warning urgency
+    if (window.critical === true) {
+        isDraining = true;
+        score += 400;
+    } else if (window.warning === true) {
+        isDraining = true;
+        score += 200;
+    }
+
+    if (!isDraining) return 0;
+
+    // Favor primary / 5-hour / session windows
+    var isShortTerm = (window.key === "primary") || (window.windowMinutes === 300) ||
+        /5[- ]?hour|5h|session/i.test(window.label || "");
+    if (isShortTerm) {
+        score += 250;
+    }
+
+    // Among draining windows, lower remaining is more urgent
+    score += (100 - window.remaining);
+
+    return score;
+}
+
+// Find the most drained window within an account entry
+function drainingWindow(entry, previousMap) {
+    if (!entry || !entry.windows || !entry.windows.length) return null;
+    var bestWin = null;
+    var bestScore = 0;
+    for (var i = 0; i < entry.windows.length; i++) {
+        var w = entry.windows[i];
+        var prev = previousMap && w && w.key ? previousMap[w.key] : undefined;
+        var s = windowDrainScore(w, prev);
+        if (s > bestScore) {
+            bestScore = s;
+            bestWin = w;
+        }
+    }
+    return bestWin;
+}
+
+// Compute the overall drain score of an account entry
+function accountDrainScore(entry, previousMap) {
+    if (!entry || entry.failed || !entry.windows || !entry.windows.length) return 0;
+    var maxScore = 0;
+    for (var i = 0; i < entry.windows.length; i++) {
+        var w = entry.windows[i];
+        var prev = previousMap && w && w.key ? previousMap[w.key] : undefined;
+        var s = windowDrainScore(w, prev);
+        if (s > maxScore) maxScore = s;
+    }
+    return maxScore;
+}
+
+function isAccountDraining(entry, previousMap) {
+    return accountDrainScore(entry, previousMap) > 0;
+}
+
+// Reorder entries so that any account currently being drained moves to the top of the list
+function prioritizeDrainingAccounts(entries, previousQuotas) {
+    if (!entries || !Array.isArray(entries) || entries.length <= 1) return entries || [];
+    var draining = [];
+    var nonDraining = [];
+
+    for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+        var accNum = entry.accountNumber || (i + 1);
+        var prevMap = previousQuotas && entry ? (previousQuotas[entry.provider + ":" + accNum] || previousQuotas[entry.provider]) : null;
+        var score = accountDrainScore(entry, prevMap);
+        if (score > 0) {
+            var copy = {};
+            for (var k in entry) {
+                if (Object.prototype.hasOwnProperty.call(entry, k)) {
+                    copy[k] = entry[k];
+                }
+            }
+            copy.isDraining = true;
+            copy.drainScore = score;
+            var dw = drainingWindow(entry, prevMap);
+            if (dw) copy.drainingWindowKey = dw.key;
+            draining.push({entry: copy, score: score, originalIndex: i});
+        } else {
+            nonDraining.push(entry);
+        }
+    }
+
+    if (draining.length === 0) return entries;
+
+    draining.sort(function(a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.originalIndex - b.originalIndex;
+    });
+
+    var result = [];
+    for (var j = 0; j < draining.length; j++) {
+        result.push(draining[j].entry);
+    }
+    for (var k = 0; k < nonDraining.length; k++) {
+        result.push(nonDraining[k]);
+    }
+    return result;
+}
+
 // Share the same compact labels and display limit between text and logo adapters.
-function barSegments(entries, mode, starredModel, singleBar) {
+function barSegments(entries, mode, starredModel, singleBar, previousQuotas) {
     if (!entries || !entries.length) return [];
+
+    // Prioritize draining accounts: any account currently being drained takes precedence,
+    // moves to the top and appears in the menu bar.
+    var drainingAccount = null;
+    var drainingWin = null;
+    var maxDrainScore = 0;
+
+    for (var d = 0; d < entries.length; d++) {
+        var e = entries[d];
+        var accNum = e.accountNumber || (d + 1);
+        var prevMap = previousQuotas && e ? (previousQuotas[e.provider + ":" + accNum] || previousQuotas[e.provider]) : null;
+        var dScore = accountDrainScore(e, prevMap);
+        if (dScore > maxDrainScore) {
+            maxDrainScore = dScore;
+            drainingAccount = e;
+            drainingWin = drainingWindow(e, prevMap);
+        }
+    }
+
+    if (drainingAccount && drainingWin) {
+        var dTag = drainingAccount.provider === "codex" ? "CX" :
+                   drainingAccount.provider === "claude" ? "CL" :
+                   drainingAccount.provider;
+
+        var dItem = {
+            provider: drainingAccount.provider,
+            tag: dTag,
+            text: quotaValue(drainingWin.remaining, mode) + "%",
+            isDraining: true
+        };
+
+        if (drainingAccount.accountNumber && drainingAccount.accountNumber > 1) {
+            dItem.accountNumber = drainingAccount.accountNumber;
+        }
+
+        return [dItem];
+    }
 
     // When singleBar is enabled (or a starred model is present), show strictly ONE relevant bar as efficiently as possible
     if (singleBar !== false && (singleBar === true || (starredModel && (starredModel.provider || starredModel.label || starredModel.key)))) {
@@ -327,10 +496,10 @@ function barSegments(entries, mode, starredModel, singleBar) {
     });
 }
 
-function summary(entries, mode, starredModel, singleBar) {
-    var shown = barSegments(entries, mode, starredModel, singleBar);
+function summary(entries, mode, starredModel, singleBar, previousQuotas) {
+    var shown = barSegments(entries, mode, starredModel, singleBar, previousQuotas);
     var label = shown.map(function(entry) { return (entry.isStarred ? "★ " : "") + entry.tag + " " + entry.text; }).join("  ·  ");
-    if (singleBar !== false && (singleBar === true || (starredModel && starredModel.label))) {
+    if (singleBar !== false && (singleBar === true || (starredModel && starredModel.label) || (shown.length > 0 && shown[0].isDraining))) {
         return label;
     }
     return label + (entries.length > shown.length ? "  +" + (entries.length - shown.length) : "");

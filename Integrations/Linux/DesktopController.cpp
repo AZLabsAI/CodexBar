@@ -277,7 +277,7 @@ void DesktopController::probe(QProcess &process, const QStringList &command, boo
                 return;
             }
             m_usageBatch = false;
-            m_entries = m_batchEntries;
+            applyDrainingPriority(m_batchEntries);
             updateLabels();
             if (m_batchFailed) {
                 m_error = "Some usage could not be refreshed. Previous results may be out of date.";
@@ -350,13 +350,43 @@ int DesktopController::cursorY() const {
     return QCursor::pos().y();
 }
 
+void DesktopController::applyDrainingPriority(const QVariantList &entries) {
+    QVariantMap prevMap;
+    for (auto it = m_previousQuotas.begin(); it != m_previousQuotas.end(); ++it) {
+        prevMap[it.key()] = it.value();
+    }
+    const auto prioritized = call(m_usageModel, "prioritizeDrainingAccounts",
+        {m_engine.toScriptValue(entries), m_engine.toScriptValue(prevMap)});
+    if (prioritized.isArray()) {
+        m_entries = prioritized.toVariant().toList();
+    } else {
+        m_entries = entries;
+    }
+    for (const auto &entry : m_entries) {
+        const auto map = entry.toMap();
+        const auto provider = map.value("provider").toString();
+        const int accNum = map.value("accountNumber", 1).toInt();
+        const auto accKey = provider + ":" + QString::number(accNum);
+        for (const auto &wItem : map.value("windows").toList()) {
+            const auto wMap = wItem.toMap();
+            const auto wKey = wMap.value("key").toString();
+            m_previousQuotas[accKey + "/" + wKey] = wMap.value("remaining").toDouble();
+        }
+    }
+}
+
 void DesktopController::updateLabels() {
     const auto rows = m_engine.toScriptValue(m_entries);
     const auto mode = m_settings.value("quotaDisplay").toString();
     const auto starred = m_engine.toScriptValue(m_settings.value("starredModel"));
     const bool single = m_settings.value("singleBar", true).toBool();
-    m_summary = call(m_usageModel, "summary", {rows, mode, starred, single}).toString();
-    m_barEntries = QJsonArray::fromVariantList(call(m_usageModel, "barSegments", {rows, mode, starred, single}).toVariant().toList());
+    QVariantMap prevMap;
+    for (auto it = m_previousQuotas.begin(); it != m_previousQuotas.end(); ++it) {
+        prevMap[it.key()] = it.value();
+    }
+    const auto prevValue = m_engine.toScriptValue(prevMap);
+    m_summary = call(m_usageModel, "summary", {rows, mode, starred, single, prevValue}).toString();
+    m_barEntries = QJsonArray::fromVariantList(call(m_usageModel, "barSegments", {rows, mode, starred, single, prevValue}).toVariant().toList());
 }
 
 QJsonObject DesktopController::snapshot() const {
@@ -701,6 +731,7 @@ void DesktopController::refreshAccount(const QString &provider, int accountIndex
                         }
                     }
                 }
+                applyDrainingPriority(m_entries);
                 updateLabels();
                 updateNotifications(m_entries);
             }

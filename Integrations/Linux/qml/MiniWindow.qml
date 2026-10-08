@@ -302,10 +302,10 @@ ApplicationWindow {
                                 }
 
                                 Label {
-                                    text: window.currentAccountLabel
+                                    text: (currentEntry && currentEntry.isDraining ? "⚡ " : "") + window.currentAccountLabel
                                     font.bold: true
                                     font.pixelSize: 12
-                                    color: window.rootAccent
+                                    color: (currentEntry && currentEntry.isDraining) ? "#f59e0b" : window.rootAccent
                                     Layout.fillWidth: true
                                     elide: Text.ElideRight
                                     textFormat: Text.PlainText

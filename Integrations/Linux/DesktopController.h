@@ -97,6 +97,8 @@ private:
     void loadSettings(const QString &cliOverride);
     bool validate(QVariantMap &settings);
     void probe(QProcess &process, const QStringList &command, bool cost);
+    QMap<QString, double> m_previousQuotas;
+    void applyDrainingPriority(const QVariantList &entries);
     void updateNotifications(const QVariantList &entries);
     QJSValue call(const QJSValue &module, const QString &function, const QJSValueList &args) const;
 };

@@ -55,7 +55,7 @@ Frame {
         }
         RowLayout {
             Layout.fillWidth: true
-            visible: (root.entry.accountLabel || "") !== ""
+            visible: (root.entry.accountLabel || "") !== "" || root.entry.isDraining === true || desktop.providerAccountCount(root.entry.provider) > 1
             spacing: 8
             Rectangle {
                 visible: desktop.providerAccountCount(root.entry.provider) > 1
@@ -72,6 +72,23 @@ Frame {
                     font.pixelSize: 11
                     font.bold: true
                     color: root.accent
+                }
+            }
+            Rectangle {
+                visible: root.entry.isDraining === true
+                color: Qt.rgba(0.96, 0.62, 0.04, 0.2)
+                radius: 4
+                border.color: "#f59e0b"
+                border.width: 1
+                Layout.preferredHeight: 24
+                implicitWidth: drainingBadgeLabel.implicitWidth + 12
+                Label {
+                    id: drainingBadgeLabel
+                    anchors.centerIn: parent
+                    text: "⚡ Draining"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: "#f59e0b"
                 }
             }
             Label {
