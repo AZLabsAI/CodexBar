@@ -96,3 +96,54 @@ test('families reporting equal values keep their own titles', () => {
     const low = model.transition(baseline.state, antigravity(5, 0, 5), 10);
     assert.deepEqual(Array.from(low.events, event => event.message), ['Claude/GPT 5-hour: 5% quota remaining.']);
 });
+
+test('quota depletion triggers depleted event with reset time and account details', () => {
+    const acc = (remaining, reset = '2026-10-08T05:35:00Z', label = 'aubrey.zemba@dyedurham.com') => ({
+        provider: 'codex', accountLabel: label,
+        windows: [{key: 'primary', label: '5-hour', remaining, resetsAt: reset}], statusLevel: 'none'
+    });
+    const baseline = model.transition({}, [acc(50)], 10);
+    assert.equal(baseline.events.length, 0);
+
+    // Drops to 0% -> depleted event
+    const depleted = model.transition(baseline.state, [acc(0)], 10);
+    assert.equal(depleted.events.length, 1);
+    assert.equal(depleted.events[0].kind, 'depleted');
+    assert.equal(depleted.events[0].provider, 'codex');
+    assert.equal(depleted.events[0].accountLabel, 'aubrey.zemba@dyedurham.com');
+    assert.equal(depleted.events[0].resetsAt, '2026-10-08T05:35:00Z');
+
+    // Returns to 100% -> alarm event triggers with restored details!
+    const restored = model.transition(depleted.state, [acc(100, '2026-10-08T10:35:00Z')], 10);
+    assert.equal(restored.events.length, 1);
+    assert.equal(restored.events[0].kind, 'alarm');
+    assert.equal(restored.events[0].provider, 'codex');
+    assert.equal(restored.events[0].accountLabel, 'aubrey.zemba@dyedurham.com');
+    assert.equal(restored.events[0].remaining, 100);
+    assert.match(restored.events[0].message, /Quota restored!.*aubrey\.zemba@dyedurham\.com.*5-hour.*100% available/);
+});
+
+test('multi-account quota depletion and reset alarms are tracked independently', () => {
+    const acc1 = (rem) => ({
+        provider: 'codex', accountLabel: 'work@example.com',
+        windows: [{key: 'primary', label: '5-hour', remaining: rem, resetsAt: '2026-10-08T06:00:00Z'}]
+    });
+    const acc2 = (rem) => ({
+        provider: 'codex', accountLabel: 'personal@example.com',
+        windows: [{key: 'primary', label: '5-hour', remaining: rem, resetsAt: '2026-10-08T08:00:00Z'}]
+    });
+    const s1 = model.transition({}, [acc1(50), acc2(50)], 10).state;
+
+    // Only acc1 depletes
+    const s2 = model.transition(s1, [acc1(0), acc2(40)], 10);
+    assert.equal(s2.events.length, 1);
+    assert.equal(s2.events[0].kind, 'depleted');
+    assert.equal(s2.events[0].accountLabel, 'work@example.com');
+
+    // acc1 restores -> alarm event for work@example.com
+    const s3 = model.transition(s2.state, [acc1(100), acc2(30)], 10);
+    assert.equal(s3.events.length, 1);
+    assert.equal(s3.events[0].kind, 'alarm');
+    assert.equal(s3.events[0].accountLabel, 'work@example.com');
+});
+

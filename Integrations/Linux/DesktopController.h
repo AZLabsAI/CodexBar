@@ -25,6 +25,9 @@ class DesktopController : public QObject {
     Q_PROPERTY(bool costBusy READ costBusy NOTIFY changed)
     Q_PROPERTY(bool stale READ stale NOTIFY changed)
     Q_PROPERTY(QString updated READ updated NOTIFY changed)
+    Q_PROPERTY(QVariantList alarms READ alarms NOTIFY alarmsChanged)
+    Q_PROPERTY(QVariantMap ringingAlarm READ ringingAlarm NOTIFY ringingAlarmChanged)
+    Q_PROPERTY(bool isAlarmRinging READ isAlarmRinging NOTIFY ringingAlarmChanged)
 
 public:
     explicit DesktopController(const QString &cliOverride, QObject *parent = nullptr);
@@ -45,6 +48,16 @@ public:
     Q_INVOKABLE void refreshAccount(const QString &provider, int accountIndex = 1);
     Q_INVOKABLE bool isAccountRefreshing(const QString &provider, int accountIndex = 1) const;
     Q_INVOKABLE int providerAccountCount(const QString &provider) const;
+    QVariantList alarms() const { return m_alarms; }
+    QVariantMap ringingAlarm() const { return m_ringingAlarm; }
+    bool isAlarmRinging() const { return m_isAlarmRinging; }
+    Q_INVOKABLE void dismissAlarm(const QString &alarmId = QString());
+    Q_INVOKABLE void snoozeAlarm(const QString &alarmId = QString(), int minutes = 5);
+    Q_INVOKABLE void testAlarm();
+    Q_INVOKABLE void stopAlarmSound();
+    Q_INVOKABLE bool hasArmedAlarm(const QString &provider, const QString &windowKey, const QString &accountLabel = QString()) const;
+    Q_INVOKABLE QVariantMap alarmForWindow(const QString &provider, const QString &windowKey, const QString &accountLabel = QString()) const;
+    Q_INVOKABLE void toggleAlarm(const QString &provider, const QString &windowKey, const QString &windowLabel, const QString &accountLabel, const QString &resetsAt);
     QVariantList entries() const { return m_entries; }
     QVariantList spending() const { return m_spending; }
     QVariantMap settings() const { return m_settings; }
@@ -71,6 +84,12 @@ signals:
     void settingsChanged();
     void windowRequested(const QString &page);
     void accountRefreshingChanged();
+    void alarmsChanged();
+    void ringingAlarmChanged();
+
+private slots:
+    void playAlarmSound();
+    void onNotificationAction(uint id, const QString &action);
 
 private:
     QJSEngine m_engine;
@@ -85,7 +104,15 @@ private:
     void nextProvider();
     void loadProviders();
     void updateLabels();
-    QTimer m_poll, m_clock;
+    QTimer m_poll, m_clock, m_alarmCheckTimer, m_alarmSoundTimer;
+    QVariantList m_alarms;
+    QVariantMap m_ringingAlarm;
+    bool m_isAlarmRinging = false;
+    void checkAlarms();
+    void updateQuotaAlarmsFromEntries();
+    void triggerAlarm(QVariantMap &alarm);
+    void postAlarmNotification(const QVariantMap &alarm);
+    QString makeAlarmId(const QString &provider, const QString &accountLabel, const QString &windowKey) const;
     QLocalServer m_server;
     QVariantMap m_settings;
     QVariantList m_entries, m_spending;

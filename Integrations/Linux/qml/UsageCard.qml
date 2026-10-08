@@ -115,6 +115,31 @@ Frame {
                     hoverEnabled: true
                 }
             }
+            Rectangle {
+                readonly property bool hasAlarm: desktop && desktop.hasArmedAlarm(root.entry.provider, "primary", root.entry.accountLabel)
+                visible: hasAlarm
+                color: Qt.rgba(0.96, 0.62, 0.04, 0.18)
+                radius: 4
+                border.color: "#f59e0b"
+                border.width: 1
+                Layout.preferredHeight: 24
+                implicitWidth: alarmBadgeLabel.implicitWidth + 14
+                Label {
+                    id: alarmBadgeLabel
+                    anchors.centerIn: parent
+                    text: "⏰ Alarm Armed"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: "#f59e0b"
+                }
+                ToolTip.visible: alarmBadgeArea.containsMouse
+                ToolTip.text: "Alarm set: Will play persistent sound when quota returns"
+                MouseArea {
+                    id: alarmBadgeArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                }
+            }
             Label {
                 text: root.entry.accountLabel || ""
                 font.bold: true
@@ -244,7 +269,21 @@ Frame {
                     Label { text: Usage.quotaValue(modelData.remaining, desktop.settings.quotaDisplay) + "% " + (desktop.settings.quotaDisplay === "used" ? "used" : "left"); font.bold: true; color: cardStarBtn.isStarred ? "#f59e0b" : palette.text }
                 }
                 ProgressBar { Layout.fillWidth: true; from: 0; to: 100; value: Usage.quotaValue(modelData.remaining, desktop.settings.quotaDisplay); palette.highlight: Usage.progressBarColor(modelData.remaining, root.accent, desktop.settings.warningColors) }
-                Label { text: Usage.resetText(modelData.resetsAt, clock.now, desktop.settings.resetDisplay); opacity: 0.65; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: Usage.resetText(modelData.resetsAt, clock.now, desktop.settings.resetDisplay); opacity: 0.65; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        property bool isArmed: desktop && desktop.hasArmedAlarm(root.entry.provider, modelData.key, root.entry.accountLabel)
+                        visible: modelData.resetsAt && modelData.resetsAt !== ""
+                        text: isArmed ? "⏰ Armed" : "⏰ Set Alarm"
+                        font.pixelSize: 10
+                        Layout.preferredHeight: 22
+                        onClicked: {
+                            if (desktop) desktop.toggleAlarm(root.entry.provider, modelData.key, modelData.label, root.entry.accountLabel, modelData.resetsAt);
+                        }
+                    }
+                }
                 Label { text: modelData.pace || ""; visible: desktop.settings.showPace && text !== ""; Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7 }
             }
         }
@@ -300,6 +339,55 @@ Frame {
                         visible: text !== ""
                         elide: Text.ElideRight
                     }
+                }
+            }
+        }
+
+        // Dedicated Ringing Alarm Card Block
+        Rectangle {
+            id: ringingAlarmCard
+            visible: desktop && desktop.isAlarmRinging && desktop.ringingAlarm && desktop.ringingAlarm.provider === root.entry.provider
+            Layout.fillWidth: true
+            radius: 8
+            color: Qt.rgba(0.96, 0.62, 0.04, 0.15)
+            border.color: "#f59e0b"
+            border.width: 1.5
+            implicitHeight: ringingContent.implicitHeight + 16
+
+            RowLayout {
+                id: ringingContent
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 8
+
+                Label {
+                    text: "🔔"
+                    font.pixelSize: 16
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Label {
+                        text: "QUOTA RESET ALARM RINGING"
+                        font.bold: true
+                        font.pixelSize: 11
+                        color: "#f59e0b"
+                    }
+                    Label {
+                        text: "Playing sound until dismissed. Quota is now ready!"
+                        font.pixelSize: 11
+                        opacity: 0.8
+                    }
+                }
+
+                Button {
+                    text: "🔕 Dismiss"
+                    font.bold: true
+                    font.pixelSize: 11
+                    Layout.preferredHeight: 28
+                    onClicked: desktop.dismissAlarm()
                 }
             }
         }

@@ -286,6 +286,14 @@ else:
         for error in ['ReferenceError', 'TypeError', 'failed to load', 'Cannot assign', 'Unable to assign', 'Binding loop']:
             self.assertNotIn(error, log)
 
+    def test_quota_alarm_settings_and_snapshot(self):
+        snapshot = self.client('--snapshot')
+        self.assertIn('isAlarmRinging', snapshot)
+        self.assertFalse(snapshot['isAlarmRinging'])
+        self.assertIn('alarmsCount', snapshot)
+        self.assertTrue(self.client('--configure', '{"alarmEnabled":true,"alarmSound":false}')['ok'])
+        self.assertTrue(self.client('--configure', '{"alarmEnabled":true,"alarmSound":true}')['ok'])
+
 
 if __name__ == '__main__':
     unittest.main()

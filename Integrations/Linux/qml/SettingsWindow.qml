@@ -27,6 +27,8 @@ ApplicationWindow {
         account.value = s.accountIndex; allAccounts.checked = s.allAccounts;
         identity.checked = s.showIdentity; costs.checked = s.showCosts; status.checked = s.showStatus;
         notices.checked = s.notifications; threshold.value = s.notifyThreshold; interval.value = s.refreshSeconds;
+        alarmEnabled.checked = s.alarmEnabled !== undefined ? s.alarmEnabled : true;
+        alarmSound.checked = s.alarmSound !== undefined ? s.alarmSound : true;
         providerOrder = s.providerOrder.slice();
         quota.currentIndex = quota.model.indexOf(s.quotaDisplay);
         reset.currentIndex = reset.model.indexOf(s.resetDisplay);
@@ -99,6 +101,34 @@ ApplicationWindow {
                             SpinBox { id: threshold; from: 1; to: 99; editable: true }
                         }
                         Option { id: status; text: "Service status" }
+                    }
+                }
+
+                GroupBox {
+                    title: "Quota Reset Alarms"; Layout.fillWidth: true; visible: window.section === 0
+                    ColumnLayout {
+                        anchors.fill: parent; spacing: 10
+                        Option { id: alarmEnabled; text: "Automatically set alarm when quota runs out" }
+                        Option { id: alarmSound; text: "Persistent sound notification until dismissed" }
+                        Label {
+                            text: "Plays an audible alarm continuously when a depleted quota returns until explicitly dismissed."
+                            Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.65; font.pixelSize: 11
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Label {
+                                text: (desktop && desktop.alarms && desktop.alarms.length > 0) ?
+                                    ("Active alarms: " + desktop.alarms.length) : "No active alarms"
+                                font.pixelSize: 11
+                                opacity: 0.8
+                                Layout.fillWidth: true
+                            }
+                            Button {
+                                text: "🔔 Test Alarm Sound"
+                                font.pixelSize: 11
+                                onClicked: desktop.testAlarm()
+                            }
+                        }
                     }
                 }
 
@@ -566,7 +596,9 @@ ApplicationWindow {
                         windowOpacity: Math.round(windowOpacitySlider.value * 100) / 100,
                         miniOpacity: Math.round(miniOpacitySlider.value * 100) / 100,
                         sidebarOpacity: Math.round(dockOpacitySlider.value * 100) / 100,
-                        sidebarHoverBrighten: dockHoverBrighten.checked
+                        sidebarHoverBrighten: dockHoverBrighten.checked,
+                        alarmEnabled: alarmEnabled.checked,
+                        alarmSound: alarmSound.checked
                     })) {
                         window.feedback = "Settings saved successfully";
                     }

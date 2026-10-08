@@ -144,4 +144,9 @@ ApplicationWindow {
             Button { text: "Close"; onClicked: window.hide() }
         }
     }
+
+    AlarmOverlay {
+        anchors.fill: parent
+        z: 999
+    }
 }

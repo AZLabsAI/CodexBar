@@ -51,10 +51,22 @@ DesktopController::DesktopController(const QString &cliOverride, QObject *parent
     m_poll.start(m_settings.value("refreshSeconds").toInt() * 1000);
     connect(&m_clock, &QTimer::timeout, this, &DesktopController::changed);
     m_clock.start(30000);
+    connect(&m_alarmCheckTimer, &QTimer::timeout, this, &DesktopController::checkAlarms);
+    m_alarmCheckTimer.start(1000);
+    connect(&m_alarmSoundTimer, &QTimer::timeout, this, &DesktopController::playAlarmSound);
+    QDBusConnection::sessionBus().connect(
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+        "ActionInvoked",
+        this,
+        SLOT(onNotificationAction(uint, QString)));
     QTimer::singleShot(0, this, &DesktopController::refresh);
 }
 
 DesktopController::~DesktopController() {
+    m_alarmSoundTimer.stop();
+    m_alarmCheckTimer.stop();
     m_usage.disconnect(this); m_cost.disconnect(this);
     m_accountProcess.disconnect(this); stop(m_usage); stop(m_cost); stop(m_catalog); stop(m_accountProcess);
 }
@@ -99,7 +111,7 @@ bool DesktopController::validate(QVariantMap &values) {
         !QStringList{"meters", "icon"}.contains(values.value("trayStyle").toString())) {
         m_configError = "Unsupported display preference."; return false;
     }
-    for (const auto &key : {"allAccounts", "showIdentity", "showCosts", "showStatus", "notifications", "showTray", "refreshOnOpen", "showPace", "warningColors", "followOmarchyTheme", "sidebarPinned", "sidebarCollapsed", "sidebarHoverBrighten"})
+    for (const auto &key : {"allAccounts", "showIdentity", "showCosts", "showStatus", "notifications", "showTray", "refreshOnOpen", "showPace", "warningColors", "followOmarchyTheme", "sidebarPinned", "sidebarCollapsed", "sidebarHoverBrighten", "alarmEnabled", "alarmSound"})
         if (values.contains(key)) values[key] = values.value(key).toBool();
     for (const auto &key : {"sidebarOpacity", "windowOpacity", "miniOpacity"}) {
         if (values.contains(key)) {
@@ -136,7 +148,8 @@ void DesktopController::loadSettings(const QString &cliOverride) {
         {"warningColors", true}, {"trayStyle", "meters"}, {"followOmarchyTheme", false}, {"starredModel", QVariantMap{}},
         {"singleBar", true},
         {"sidebarOpacity", 0.85}, {"sidebarSide", "right"}, {"sidebarPinned", true}, {"sidebarCollapsed", false}, {"sidebarHoverBrighten", true},
-        {"themeMode", "dark"}, {"accentColor", "violet"}, {"windowOpacity", 0.95}, {"miniOpacity", 0.90}};
+        {"themeMode", "dark"}, {"accentColor", "violet"}, {"windowOpacity", 0.95}, {"miniOpacity", 0.90},
+        {"alarmEnabled", true}, {"alarmSound", true}};
     m_configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/codexbar/linux.json";
     QFile file(m_configPath);
     QVariantMap candidate = m_settings;
@@ -308,9 +321,59 @@ void DesktopController::updateNotifications(const QVariantList &entries) {
         m_settings.value("notifyThreshold").toInt()});
     if (result.isError()) return;
     m_noticeState = result.property("state");
-    if (!m_settings.value("notifications").toBool()) return;
-    for (const auto &item : result.property("events").toVariant().toList()) {
+    const auto events = result.property("events").toVariant().toList();
+    for (const auto &item : events) {
         auto event = item.toMap();
+        QString kind = event.value("kind").toString();
+        if (kind == "alarm") {
+            QVariantMap alarm;
+            QString prov = event.value("provider").toString();
+            QString acc = event.value("accountLabel").toString();
+            QString winKey = event.value("windowKey").toString();
+            alarm["id"] = makeAlarmId(prov, acc, winKey);
+            alarm["provider"] = prov;
+            alarm["accountLabel"] = acc;
+            alarm["windowKey"] = winKey;
+            alarm["windowLabel"] = event.value("windowLabel").toString();
+            alarm["resetsAt"] = event.value("resetsAt").toString();
+            alarm["restoredRemaining"] = event.value("remaining", 100).toInt();
+            alarm["status"] = "ringing";
+            alarm["triggeredAt"] = QDateTime::currentMSecsSinceEpoch();
+            triggerAlarm(alarm);
+        } else if (kind == "depleted") {
+            QString prov = event.value("provider").toString();
+            QString acc = event.value("accountLabel").toString();
+            QString winKey = event.value("windowKey").toString();
+            QString resetsAt = event.value("resetsAt").toString();
+            QString id = makeAlarmId(prov, acc, winKey);
+            bool exists = false;
+            for (const auto &existing : m_alarms) {
+                auto a = existing.toMap();
+                if (a.value("id").toString() == id && a.value("status").toString() == "armed") {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists && !resetsAt.isEmpty()) {
+                QVariantMap alarm;
+                alarm["id"] = id;
+                alarm["provider"] = prov;
+                alarm["accountLabel"] = acc;
+                alarm["windowKey"] = winKey;
+                alarm["windowLabel"] = event.value("windowLabel").toString();
+                alarm["resetsAt"] = resetsAt;
+                alarm["resetsAtMs"] = QDateTime::fromString(resetsAt, Qt::ISODate).toMSecsSinceEpoch();
+                alarm["status"] = "armed";
+                alarm["armedAt"] = QDateTime::currentMSecsSinceEpoch();
+                m_alarms.append(alarm);
+                emit alarmsChanged();
+            }
+        }
+    }
+    if (!m_settings.value("notifications").toBool()) return;
+    for (const auto &item : events) {
+        auto event = item.toMap();
+        if (event.value("kind").toString() == "alarm") continue; // Handled specially by postAlarmNotification
         auto message = QDBusMessage::createMethodCall("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
             "org.freedesktop.Notifications", "Notify");
         message.setArguments({"CodexBar", uint(0), "codexbar", "CodexBar · " + event.value("provider").toString(),
@@ -373,6 +436,7 @@ void DesktopController::applyDrainingPriority(const QVariantList &entries) {
             m_previousQuotas[accKey + "/" + wKey] = wMap.value("remaining").toDouble();
         }
     }
+    updateQuotaAlarmsFromEntries();
 }
 
 void DesktopController::updateLabels() {
@@ -424,7 +488,8 @@ QJsonObject DesktopController::snapshot() const {
     }
     return {{"schemaVersion", 1}, {"pid", QCoreApplication::applicationPid()}, {"summary", m_summary}, {"barEntries", m_barEntries}, {"starredModel", QJsonObject::fromVariantMap(m_settings.value("starredModel").toMap())}, {"singleBar", m_settings.value("singleBar", true).toBool()},
         {"entries", compact}, {"quotaDisplay", m_settings.value("quotaDisplay").toString()}, {"busy", busy()}, {"stale", stale()}, {"error", m_error},
-        {"updated", updated()}, {"costBusy", costBusy()}, {"costProviders", m_spending.size()}, {"costError", m_costError}};
+        {"updated", updated()}, {"costBusy", costBusy()}, {"costProviders", m_spending.size()}, {"costError", m_costError},
+        {"isAlarmRinging", m_isAlarmRinging}, {"ringingAlarm", QJsonObject::fromVariantMap(m_ringingAlarm)}, {"alarmsCount", m_alarms.size()}};
 }
 
 bool DesktopController::listen(const QString &socketPath) {
@@ -770,3 +835,304 @@ int DesktopController::providerAccountCount(const QString &provider) const {
     }
     return count;
 }
+
+QString DesktopController::makeAlarmId(const QString &provider, const QString &accountLabel, const QString &windowKey) const {
+    return provider.toLower() + "/" + (accountLabel.isEmpty() ? "default" : accountLabel) + "/" + (windowKey.isEmpty() ? "primary" : windowKey);
+}
+
+void DesktopController::updateQuotaAlarmsFromEntries() {
+    if (!m_settings.value("alarmEnabled", true).toBool()) return;
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    bool modified = false;
+
+    for (const auto &entryVal : m_entries) {
+        auto entry = entryVal.toMap();
+        QString provider = entry.value("provider").toString();
+        QString accountLabel = entry.value("accountLabel").toString();
+        auto windows = entry.value("windows").toList();
+
+        for (const auto &winVal : windows) {
+            auto win = winVal.toMap();
+            double remaining = win.value("remaining").toDouble();
+            QString resetsAt = win.value("resetsAt").toString();
+            QString windowKey = win.value("key").toString();
+            QString windowLabel = win.value("label").toString();
+
+            // When quota runs out: remaining <= 0 and resetsAt is present
+            if (remaining <= 0 && !resetsAt.isEmpty()) {
+                QString id = makeAlarmId(provider, accountLabel, windowKey);
+                bool exists = false;
+                for (const auto &existing : m_alarms) {
+                    auto a = existing.toMap();
+                    if (a.value("id").toString() == id && 
+                        (a.value("status").toString() == "armed" || a.value("status").toString() == "ringing")) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    QVariantMap newAlarm;
+                    newAlarm["id"] = id;
+                    newAlarm["provider"] = provider;
+                    newAlarm["accountLabel"] = accountLabel;
+                    newAlarm["windowKey"] = windowKey;
+                    newAlarm["windowLabel"] = windowLabel;
+                    newAlarm["resetsAt"] = resetsAt;
+                    newAlarm["resetsAtMs"] = QDateTime::fromString(resetsAt, Qt::ISODate).toMSecsSinceEpoch();
+                    newAlarm["status"] = "armed";
+                    newAlarm["armedAt"] = now;
+                    m_alarms.append(newAlarm);
+                    modified = true;
+                }
+            }
+        }
+    }
+    if (modified) emit alarmsChanged();
+}
+
+void DesktopController::checkAlarms() {
+    if (!m_settings.value("alarmEnabled", true).toBool()) return;
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    bool changedAlarms = false;
+
+    for (int i = 0; i < m_alarms.size(); ++i) {
+        auto alarm = m_alarms[i].toMap();
+        if (alarm.value("status").toString() != "armed") continue;
+
+        qint64 resetsAtMs = alarm.value("resetsAtMs").toLongLong();
+        QString provider = alarm.value("provider").toString();
+        QString windowKey = alarm.value("windowKey").toString();
+        QString accountLabel = alarm.value("accountLabel").toString();
+
+        bool shouldTrigger = false;
+        int restoredRemaining = 100;
+
+        // Condition A: Reset timestamp elapsed
+        if (resetsAtMs > 0 && now >= resetsAtMs) {
+            shouldTrigger = true;
+        }
+
+        // Condition B: Polled quota returned to > 0
+        for (const auto &entryVal : m_entries) {
+            auto entry = entryVal.toMap();
+            if (entry.value("provider").toString().toLower() != provider.toLower()) continue;
+            if (!accountLabel.isEmpty() && entry.value("accountLabel").toString() != accountLabel) continue;
+
+            auto windows = entry.value("windows").toList();
+            for (const auto &winVal : windows) {
+                auto win = winVal.toMap();
+                if (win.value("key").toString() == windowKey) {
+                    double rem = win.value("remaining").toDouble();
+                    if (rem > 0) {
+                        shouldTrigger = true;
+                        restoredRemaining = int(rem);
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (shouldTrigger) {
+            alarm["status"] = "ringing";
+            alarm["triggeredAt"] = now;
+            alarm["restoredRemaining"] = restoredRemaining;
+            m_alarms[i] = alarm;
+            changedAlarms = true;
+            triggerAlarm(alarm);
+            break; // Trigger one alarm at a time
+        }
+    }
+
+    if (changedAlarms) emit alarmsChanged();
+}
+
+void DesktopController::triggerAlarm(QVariantMap &alarm) {
+    m_ringingAlarm = alarm;
+    m_isAlarmRinging = true;
+    emit ringingAlarmChanged();
+
+    // Start persistent sound playback loop
+    playAlarmSound();
+    if (!m_alarmSoundTimer.isActive()) {
+        m_alarmSoundTimer.start(1800);
+    }
+
+    // Post D-Bus notification
+    postAlarmNotification(alarm);
+
+    // Request window display
+    emit windowRequested("usage");
+}
+
+void DesktopController::playAlarmSound() {
+    if (!m_settings.value("alarmSound", true).toBool()) return;
+
+    if (QFile::exists("/usr/bin/canberra-gtk-play")) {
+        QProcess::startDetached("/usr/bin/canberra-gtk-play", QStringList{"-i", "alarm-clock-elapsed", "--description", "CodexBar Quota Reset Alarm"});
+        return;
+    }
+
+    if (QFile::exists("/usr/bin/pw-play") && QFile::exists("/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga")) {
+        QProcess::startDetached("/usr/bin/pw-play", QStringList{"/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"});
+        return;
+    }
+
+    if (QFile::exists("/usr/bin/aplay") && QFile::exists("/usr/share/sounds/alsa/Front_Center.wav")) {
+        QProcess::startDetached("/usr/bin/aplay", QStringList{"-q", "/usr/share/sounds/alsa/Front_Center.wav"});
+        return;
+    }
+
+    fprintf(stderr, "\a");
+    fflush(stderr);
+}
+
+void DesktopController::postAlarmNotification(const QVariantMap &alarm) {
+    if (!m_settings.value("notifications", true).toBool()) return;
+    auto message = QDBusMessage::createMethodCall("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications", "Notify");
+    QString provider = alarm.value("provider").toString().toUpper();
+    QString account = alarm.value("accountLabel").toString();
+    QString windowLabel = alarm.value("windowLabel").toString();
+    int remaining = alarm.value("restoredRemaining", 100).toInt();
+
+    QString title = QString("CodexBar · Quota Restored (%1)").arg(provider);
+    QString body = QString("%1 quota has returned%2!\nNow %3% available.")
+        .arg(windowLabel.isEmpty() ? "Session" : windowLabel)
+        .arg(account.isEmpty() ? "" : (" for " + account))
+        .arg(remaining);
+
+    QVariantMap hints;
+    hints["urgency"] = uchar(2); // critical
+    hints["sound-name"] = "alarm-clock-elapsed";
+
+    QStringList actions = {"dismiss", "Dismiss Alarm"};
+    message.setArguments({"CodexBar", uint(0), "codexbar", title, body, actions, hints, 0});
+    QDBusConnection::sessionBus().asyncCall(message);
+}
+
+void DesktopController::onNotificationAction(uint, const QString &action) {
+    if (action == "dismiss") {
+        dismissAlarm();
+    }
+}
+
+void DesktopController::dismissAlarm(const QString &alarmId) {
+    m_alarmSoundTimer.stop();
+    m_isAlarmRinging = false;
+    m_ringingAlarm.clear();
+
+    for (int i = 0; i < m_alarms.size(); ++i) {
+        auto a = m_alarms[i].toMap();
+        if (alarmId.isEmpty() || a.value("id").toString() == alarmId || a.value("status").toString() == "ringing") {
+            a["status"] = "dismissed";
+            a["dismissedAt"] = QDateTime::currentMSecsSinceEpoch();
+            m_alarms[i] = a;
+        }
+    }
+    emit ringingAlarmChanged();
+    emit alarmsChanged();
+    emit changed();
+}
+
+void DesktopController::snoozeAlarm(const QString &alarmId, int minutes) {
+    m_alarmSoundTimer.stop();
+    m_isAlarmRinging = false;
+    m_ringingAlarm.clear();
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    qint64 snoozeUntil = now + (minutes > 0 ? minutes : 5) * 60 * 1000;
+
+    for (int i = 0; i < m_alarms.size(); ++i) {
+        auto a = m_alarms[i].toMap();
+        if (alarmId.isEmpty() || a.value("id").toString() == alarmId || a.value("status").toString() == "ringing") {
+            a["status"] = "armed";
+            a["resetsAtMs"] = snoozeUntil;
+            a["snoozedAt"] = now;
+            m_alarms[i] = a;
+        }
+    }
+    emit ringingAlarmChanged();
+    emit alarmsChanged();
+    emit changed();
+}
+
+void DesktopController::testAlarm() {
+    QVariantMap alarm;
+    alarm["id"] = "test/alarm";
+    alarm["provider"] = "codex";
+    alarm["accountLabel"] = "aubrey.zemba@dyedurham.com";
+    alarm["windowKey"] = "primary";
+    alarm["windowLabel"] = "5-hour quota";
+    alarm["resetsAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    alarm["resetsAtMs"] = QDateTime::currentMSecsSinceEpoch();
+    alarm["status"] = "ringing";
+    alarm["triggeredAt"] = QDateTime::currentMSecsSinceEpoch();
+    alarm["restoredRemaining"] = 100;
+
+    for (int i = m_alarms.size() - 1; i >= 0; --i) {
+        if (m_alarms[i].toMap().value("id").toString() == "test/alarm") {
+            m_alarms.removeAt(i);
+        }
+    }
+    m_alarms.append(alarm);
+    emit alarmsChanged();
+    triggerAlarm(alarm);
+}
+
+void DesktopController::stopAlarmSound() {
+    m_alarmSoundTimer.stop();
+}
+
+bool DesktopController::hasArmedAlarm(const QString &provider, const QString &windowKey, const QString &accountLabel) const {
+    QString id = makeAlarmId(provider, accountLabel, windowKey);
+    for (const auto &val : m_alarms) {
+        auto a = val.toMap();
+        if (a.value("id").toString() == id && a.value("status").toString() == "armed") {
+            return true;
+        }
+    }
+    return false;
+}
+
+QVariantMap DesktopController::alarmForWindow(const QString &provider, const QString &windowKey, const QString &accountLabel) const {
+    QString id = makeAlarmId(provider, accountLabel, windowKey);
+    for (const auto &val : m_alarms) {
+        auto a = val.toMap();
+        if (a.value("id").toString() == id) {
+            return a;
+        }
+    }
+    return QVariantMap();
+}
+
+void DesktopController::toggleAlarm(const QString &provider, const QString &windowKey, const QString &windowLabel, const QString &accountLabel, const QString &resetsAt) {
+    QString id = makeAlarmId(provider, accountLabel, windowKey);
+    for (int i = 0; i < m_alarms.size(); ++i) {
+        auto a = m_alarms[i].toMap();
+        if (a.value("id").toString() == id) {
+            if (a.value("status").toString() == "armed") {
+                a["status"] = "dismissed";
+                m_alarms[i] = a;
+                emit alarmsChanged();
+                return;
+            } else if (a.value("status").toString() == "ringing") {
+                dismissAlarm(id);
+                return;
+            }
+        }
+    }
+
+    // Arm new alarm
+    QVariantMap newAlarm;
+    newAlarm["id"] = id;
+    newAlarm["provider"] = provider;
+    newAlarm["accountLabel"] = accountLabel;
+    newAlarm["windowKey"] = windowKey;
+    newAlarm["windowLabel"] = windowLabel;
+    newAlarm["resetsAt"] = resetsAt;
+    newAlarm["resetsAtMs"] = QDateTime::fromString(resetsAt, Qt::ISODate).toMSecsSinceEpoch();
+    newAlarm["status"] = "armed";
+    newAlarm["armedAt"] = QDateTime::currentMSecsSinceEpoch();
+    m_alarms.append(newAlarm);
+    emit alarmsChanged();
+}
+

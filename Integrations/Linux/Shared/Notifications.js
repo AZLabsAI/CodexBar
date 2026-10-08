@@ -6,17 +6,28 @@ function transition(previous, entries, threshold) {
     var next = {};
     var events = [];
     entries.forEach(function(row) {
-        if (counts[row.provider] !== 1 || row.failed) return;
+        if (counts[row.provider] !== 1 && !row.accountLabel) return;
+        if (row.failed) return;
         row.windows.forEach(function(window) {
-            var key = row.provider + "/" + window.key;
+            var accountPart = (row.accountLabel && counts[row.provider] > 1) ? (row.accountLabel + "/") : "";
+            var key = row.provider + "/" + accountPart + window.key;
             var old = previous[key];
             next[key] = {remaining: window.remaining, reset: window.resetsAt};
             if (!old) return;
-            if (old.remaining > limit && window.remaining <= limit) {
-                events.push({kind: "low", provider: row.provider,
+            if (old.remaining > 0 && window.remaining <= 0) {
+                events.push({kind: "depleted", provider: row.provider, accountLabel: row.accountLabel || "",
+                    windowKey: window.key, windowLabel: window.label, resetsAt: window.resetsAt,
+                    message: (row.accountLabel ? (row.accountLabel + " · ") : "") + window.label + " quota has run out. Reset alarm armed for " + (window.resetsAt || "reset") + "."});
+            } else if (old.remaining <= 0 && window.remaining > 0) {
+                events.push({kind: "alarm", provider: row.provider, accountLabel: row.accountLabel || "",
+                    windowKey: window.key, windowLabel: window.label, remaining: window.remaining, resetsAt: window.resetsAt,
+                    message: "Quota restored! " + (row.accountLabel ? (row.accountLabel + " · ") : "") + window.label + " is now " + window.remaining + "% available."});
+            } else if (old.remaining > limit && window.remaining <= limit) {
+                events.push({kind: "low", provider: row.provider, accountLabel: row.accountLabel || "",
                     message: window.label + ": " + window.remaining + "% quota remaining."});
             } else if (old.reset && window.resetsAt && old.reset !== window.resetsAt && window.remaining > old.remaining) {
-                events.push({kind: "reset", provider: row.provider,
+                events.push({kind: "reset", provider: row.provider, accountLabel: row.accountLabel || "",
+                    windowKey: window.key, windowLabel: window.label, remaining: window.remaining, resetsAt: window.resetsAt,
                     message: window.label + " quota reset · " + window.remaining + "% remaining."});
             }
         });

@@ -903,4 +903,12 @@ ApplicationWindow {
             }
         }
     }
+
+    AlarmOverlay {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        compact: true
+        z: 9999
+    }
 }
