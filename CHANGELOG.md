@@ -44,6 +44,7 @@
 - Claude and Vertex: release duplicate encoded cost-cache headers while preserving warm decoded history and unchanged refreshes.
 - Claude/Vertex: reduce midnight cost-scan CPU by reusing unchanged local history while preserving date-window and duplicate-response accounting.
 - Widgets: reduce timeline decoding work by reading only the configured provider's payload while preserving snapshot freshness and account ownership checks.
+- Widgets: reload only Switcher widgets when paging providers, avoiding reload requests for unrelated widget kinds.
 
 - Antigravity: reuse HTTP connections for account verification while preserving shorter refresh deadlines.
 
