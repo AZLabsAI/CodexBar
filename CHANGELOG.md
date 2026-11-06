@@ -43,6 +43,8 @@
 - Usage & Spend: release obsolete quota history held by dashboard snapshots while preserving spend totals and conversation details.
 - Claude and Vertex: release duplicate encoded cost-cache headers while preserving warm decoded history and unchanged refreshes.
 - Claude/Vertex: reduce midnight cost-scan CPU by reusing unchanged local history while preserving date-window and duplicate-response accounting.
+- Widgets: reduce timeline decoding work by reading only the configured provider's payload while preserving snapshot freshness and account ownership checks.
+
 - Antigravity: reuse HTTP connections for account verification while preserving shorter refresh deadlines.
 
 - Replicate: reuse HTTP connections for billing refreshes without retaining cookies, credentials, or cached responses in the connection pool.
