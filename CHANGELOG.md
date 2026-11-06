@@ -52,6 +52,7 @@
 - Antigravity: reuse the known `agy` version across refreshes while its executable is unchanged, avoiding repeated version subprocesses.
 
 - Plugins: reduce API refresh CPU work by reusing initialized script runtimes while preserving concurrent account fetches.
+- App: reduce allocator-retained memory after large cost-history refreshes on recent macOS versions, without passing the policy to provider CLIs or helpers (#4803, #4486).
 - Menu: dim retained quota and Code Review bars after their own refresh failures, while keeping successful fallback readings and separate credit/cost sections in their normal colors (#4883). Thanks @Chipagosfinest!
 - Menu: use tabular digits for usage and cost values to reduce movement when equal-length numbers change (#4884). Thanks @Chipagosfinest!
 
