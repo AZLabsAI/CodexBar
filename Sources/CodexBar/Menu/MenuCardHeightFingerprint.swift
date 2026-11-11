@@ -117,6 +117,7 @@ extension UsageMenuCardView.Model.Metric {
         return MenuCardHeightFingerprint.join([
             self.id,
             self.statusText == nil ? "status=0" : "status=1",
+            self.showsBlockedStatusBar ? "statusBar=1" : "statusBar=0",
             // The title shares horizontal space with a wrapping reset label. Track it only
             // when that label exists so ordinary percentage ticks keep the fixed-row cache.
             presentation.resetText == nil

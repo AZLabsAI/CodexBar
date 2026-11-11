@@ -12,8 +12,16 @@ struct MetricRow: View {
 
     /// Synthetic credit lanes refresh independently of quota measurements.
     var barTint: Color {
-        (self.metric.retainedMeasurementOverride ?? (self.isRetainedMeasurement && !self.metric.isSyntheticCreditLane))
-            ? UsageMenuCardView.Model.staleProgressColor : self.progressColor
+        if self.metric.retainedMeasurementOverride ??
+            (self.isRetainedMeasurement && !self.metric.isSyntheticCreditLane)
+        {
+            return UsageMenuCardView.Model.staleProgressColor
+        }
+        switch self.metric.barSeverity {
+        case .weeklyCritical: return Color(nsColor: .systemRed)
+        case .blockedByWeekly: return Color(nsColor: .systemOrange)
+        case nil: return self.progressColor
+        }
     }
 
     var body: some View {
@@ -28,6 +36,12 @@ struct MetricRow: View {
                     .font(.footnote)
                     .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
                     .lineLimit(1)
+                if self.metric.showsBlockedStatusBar {
+                    UsageProgressBar(
+                        percent: 100,
+                        tint: self.barTint,
+                        accessibilityLabel: self.metric.percentStyle.accessibilityLabel)
+                }
             } else {
                 MetricRowHeader(
                     title: self.title,
@@ -38,7 +52,9 @@ struct MetricRow: View {
                     percentText: self.metric.percentLabel,
                     layoutPercentText: self.layoutMetric.percentLabel)
                 UsageProgressBar(
-                    percent: self.metric.percent,
+                    // Binding-quota providers project a weekly-blocked session as fully used, which
+                    // would leave a remaining-style bar empty and its blocked tint invisible.
+                    percent: self.metric.barSeverity == .blockedByWeekly ? 100 : self.metric.percent,
                     tint: self.barTint,
                     accessibilityLabel: self.metric.percentStyle.accessibilityLabel,
                     pacePercent: self.metric.pacePercent,
