@@ -55,6 +55,8 @@ extension UsageMenuCardView.Model {
         input: Input,
         snapshot: UsageSnapshot) -> SeverityLane?
     {
+        // Provider-specific by design: Antigravity splits quota into Gemini and Claude/GPT families,
+        // and each family's session lane is gated only by that family's weekly lane.
         if input.provider == .antigravity, AntigravityStatusSnapshot.isQuotaSummaryWindowID(metric.id) {
             guard let named = snapshot.extraRateWindows?.first(where: { $0.id == metric.id }) else { return nil }
             let family = AntigravityQuotaFamilyVisibility.knownFamily(windowID: named.id, title: named.title)
