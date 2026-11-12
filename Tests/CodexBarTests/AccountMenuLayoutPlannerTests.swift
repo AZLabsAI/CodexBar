@@ -3,8 +3,8 @@ import Foundation
 import Testing
 
 /// Coverage for the compact multi-account menu plan: active card pinned first,
-/// inactive accounts as headroom-sorted compact rows, healthy tail collapsed
-/// behind a summary row, and per-account expansion back to full cards.
+/// inactive accounts sorted by long-window availability and reset, healthy tail
+/// collapsed behind a summary row, and per-account expansion back to full cards.
 struct AccountMenuLayoutPlannerTests {
     private static let now = Date(timeIntervalSince1970: 1_782_000_000)
 
@@ -112,7 +112,8 @@ struct AccountMenuLayoutPlannerTests {
         let row = try #require(filtered.first { $0.accountID == accounts[1].id })
         #expect(row.windowDetails.map(\.metricID) == ["secondary"])
         #expect(row.windowDetails.first?.window.remainingPercent == 20)
-        #expect(row.headroomPercent == 1)
+        // The hidden Fable weekly still ranks the row; the 1% session lane never does.
+        #expect(row.headroomPercent == 2)
         #expect(row.severity == .critical)
         let hidden = self.compactRows(in: AccountMenuLayoutPlanner.plan(
             accounts: accounts,
@@ -127,11 +128,13 @@ struct AccountMenuLayoutPlannerTests {
             weeklyUsed: 20)
         let fallback = self.compactRows(in: AccountMenuLayoutPlanner.plan(
             accounts: mostlyHidden,
+            healthyTailExpanded: true,
             hiddenMetricIDs: ["primary"]))
         let fallbackRow = try #require(fallback.first { $0.accountID == mostlyHidden[1].id })
         #expect(fallbackRow.windowDetails.map(\.metricID) == ["secondary"])
         #expect(fallbackRow.windowDetails.first?.window.remainingPercent == 80)
-        #expect(fallbackRow.headroomPercent == 1)
+        #expect(fallbackRow.headroomPercent == 80)
+        #expect(fallbackRow.longWindows.first?.session == nil)
     }
 
     @Test
@@ -149,7 +152,7 @@ struct AccountMenuLayoutPlannerTests {
     }
 
     @Test
-    func `active card first then constrained rows then best candidate then collapsed tail`() {
+    func `active card first then remaining quota rows with the collapsed tail in sorted position`() {
         let plan = AccountMenuLayoutPlanner.plan(accounts: self.screenshotFixture())
 
         #expect(plan.usesCompactLayout)
@@ -165,17 +168,20 @@ struct AccountMenuLayoutPlannerTests {
         let constrained = compacts[0]
         #expect(constrained.headroomPercent == 0)
         #expect(constrained.severity == .critical)
-        #expect(constrained.windowDetails.map(\.label) == ["Fable", "Weekly"])
-        #expect(constrained.windowDetails.map(\.window.remainingPercent) == [0, 43])
+        // Every long window is listed in snapshot order, the exhausted Fable lane included.
+        #expect(constrained.windowDetails.map(\.label) == ["Weekly", "Fable"])
+        #expect(constrained.windowDetails.map(\.window.remainingPercent) == [43, 0])
+        #expect(!constrained.isExhausted)
         #expect(!constrained.isBestCandidate)
 
         let best = compacts[1]
         #expect(best.severity == .healthy)
         #expect(best.isBestCandidate)
-        #expect(best.windowDetails.map(\.label) == ["Session"])
-        #expect(best.windowDetails.first?.window.resetsAt == Self.now.addingTimeInterval(3600))
+        #expect(best.windowDetails.map(\.label) == ["Weekly"])
+        #expect(best.windowDetails.first?.window.resetsAt == Self.now.addingTimeInterval(86400))
 
-        #expect(plan.rows.last == .collapsedHealthy(count: 3))
+        #expect(plan.rows[2] == .collapsedHealthy(count: 3))
+        #expect(plan.rows.last == .compact(best))
     }
 
     @Test
@@ -189,7 +195,7 @@ struct AccountMenuLayoutPlannerTests {
         #expect(plan.rows[1] == .card(constrained))
         let compacts = self.compactRows(in: plan)
         #expect(compacts.map(\.label) == ["spare@example.com"])
-        #expect(plan.rows.last == .collapsedHealthy(count: 3))
+        #expect(plan.rows[2] == .collapsedHealthy(count: 3))
     }
 
     @Test
@@ -211,7 +217,7 @@ struct AccountMenuLayoutPlannerTests {
     }
 
     @Test
-    func `error account without snapshot sorts with the constrained rows`() {
+    func `error account without snapshot sorts below accounts with quota left`() {
         var accounts = self.screenshotFixture()
         accounts[3] = self.account(
             slot: 4,
@@ -228,8 +234,10 @@ struct AccountMenuLayoutPlannerTests {
         #expect(errorRow?.hasError == true)
         #expect(errorRow?.headroomPercent == nil)
         #expect(errorRow?.severity == nil)
-        // Unknown headroom sorts alongside the critical rows, never into the healthy tail.
-        #expect(plan.rows.last == .collapsedHealthy(count: 2))
+        // Unknown usage counts as exhausted: below every row with quota left, never in the healthy tail.
+        #expect(errorRow?.isExhausted == true)
+        #expect(compacts.last?.label == "team@example.com")
+        #expect(plan.rows.contains(.collapsedHealthy(count: 2)))
     }
 
     @Test

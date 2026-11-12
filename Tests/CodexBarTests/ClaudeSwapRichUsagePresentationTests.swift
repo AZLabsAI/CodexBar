@@ -24,7 +24,8 @@ struct ClaudeSwapRichUsagePresentationTests {
             #expect(model.label == "Account 2")
             #expect(model.accessibilityText.contains("Account 2"))
             #expect(!model.accessibilityText.contains("Research"))
-            #expect(model.headroomPercent == 38)
+            // Headroom follows the 59% weekly left, not the 38% five-hour lane.
+            #expect(model.headroomPercent == 59)
             #expect(model.hasError)
             #expect(model.detailLines.contains { $0.contains("last-known usage") })
             #expect(model.accessibilityText.contains("last-known usage"))

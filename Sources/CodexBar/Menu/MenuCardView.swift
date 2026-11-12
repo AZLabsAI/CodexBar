@@ -53,6 +53,7 @@ struct UsageMenuCardView: View {
             let isSyntheticCreditLane: Bool
             let retainedMeasurementOverride: Bool?
             var helpText: String?
+            var barSeverity: BarSeverity?
 
             init(
                 id: String,
@@ -895,7 +896,7 @@ extension UsageMenuCardView.Model {
             metadata: input.metadata)
         let paceVisible = input.paceVisible && ProviderDescriptorRegistry.descriptor(for: input.provider).pace
             .allowsPace(dataConfidence: input.snapshot?.dataConfidence ?? .unknown)
-        let rawMetrics = Self.metrics(input: input)
+        let rawMetrics = Self.weeklySeverityMetrics(Self.metrics(input: input), input: input)
         let metrics = Self.redactedMetrics(
             Self.paceGatedMetrics(
                 paceVisible ? Self.monthlyTargetMetrics(rawMetrics, input: input, calendar: calendar) : rawMetrics,
